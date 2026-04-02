@@ -14,7 +14,7 @@ based on the integration of GPEmu with TensorFlow.
 
 1. Platform and Image
 
-Our experiments have been tested on [Chameleon Cloud](https://www.chameleoncloud.org) using Ubuntu 20. Therefore, we suggest Please using "ubuntu20-xxx" images.
+Our experiments have been tested on [Chameleon Cloud](https://www.chameleoncloud.org) using Ubuntu 20. We recommend using an "ubuntu20-xxx" image.
 
 GPEmu is an emulator with the purpose of prototyping deep learning system research *without real GPUs*. Therefore, no real GPUs are needed for running GPEmu.
 
@@ -25,7 +25,7 @@ bash setup-ssh-key.sh
 
 Copy and paste into: https://github.com/settings/keys
 
-3. clone this repo to local
+3. Clone this repo locally
 
 ```
 cd ~
@@ -39,63 +39,34 @@ bash install-conda.sh
 source ~/.bashrc
 ```
 
-5. Download and build our mlock package (which is used to emulate page-locked (pinned) memory)
+5. Download and build our mlock package (used to emulate page-locked/pinned memory)
 
 ```
-cd ~
-git clone git@github.com:gustrain/mlock.git
-cd mlock
-python setup.py install
+bash install-mlock.sh
 ```
 
 
 6. Install PyTorch
 
-Install packages required for builing pytorch
+Install packages required for building pytorch and build our custom branch:
 
 ```
-conda install -y astunparse numpy ninja pyyaml mkl mkl-include setuptools cmake cffi typing_extensions future six requests dataclasses
-```
-Download our custom pytorch and build it (Note that we use "export USE_CUDA=0" to not install any cuda/GPU-related things.)
-
-```
-cd ~
-git clone https://github.com/mengwanguc/pytorch-meng.git
-cd pytorch-meng
-git submodule update --init --recursive
-
-export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-"$(dirname $(which conda))/../"}
-export USE_CUDA=0
-git checkout gus-emulator-minio
-python setup.py install
+bash install-pytorch.sh
 ```
 
-9. Download our custom torchvision and build it
+7. Download our custom torchvision and build it
 
 ```
-conda install -y aiofiles
-
-cd ~
-git clone https://github.com/mengwanguc/torchvision-meng.git
-cd torchvision-meng/
-git checkout gus-min-io
-python setup.py install
+bash install-torchvision.sh
 ```
 
-10. Update `/etc/security/limits.conf`
+8. Update `/etc/security/limits.conf`
 
 ```
-sudo nano /etc/security/limits.conf
+bash configure-memlock.sh
 ```
 
-Add the following text to the end of the file:
-
-```
-*   soft    memlock     unlimited
-*   hard    memlock     unlimited
-```
-
-11. Reboot the machine, which will take a while, and may require you to try to reopen/reconnect to your machine. 
+9. Reboot the machine, which may require reconnecting to the instance.
 
 ```
 sudo reboot

@@ -1,0 +1,250 @@
+vsGPEmu Subtree Description
+=========================
+
+Scope
+-----
+This document describes everything under the `gpemu/` subtree in this workspace:
+- gpemu/gpemu (installable Python package)
+- gpemu/mlock (C extension for pinned-memory balloons)
+- gpemu/sharing-kafka (Kafka-based sharing experiments)
+- gpemu/sharing-rabbitmq (RabbitMQ-based sharing experiments)
+
+High-Level Purpose
+------------------
+The `gpemu/` subtree provides:
+1) A Python library that emulates GPU behavior (compute time, transfer time, memory, preprocessing overlap).
+2) Broker-based sharing modules to emulate multiple jobs sharing a single GPU service.
+3) Native memory support (`mlock`) for pinned memory experiments.
+4) Standalone scripts to run and benchmark sharing scenarios.
+
+
+1) gpemu/gpemu
+==============
+
+Role
+----
+This is the primary Python package users install and import as `gpemu`.
+
+Files and What They Do
+----------------------
+- gpemu/gpemu/README.md
+  Main documentation for the package. Explains dependencies, install steps, and basic usage patterns.
+
+- gpemu/gpemu/setup.py
+  Setuptools build/install configuration for the Python package.
+
+- gpemu/gpemu/install-rabbitmq.sh
+  Convenience script to install RabbitMQ and Erlang dependencies on Ubuntu-like systems.
+
+- gpemu/gpemu/.gitignore
+  Ignore rules for local artifacts in this package area.
+
+- gpemu/gpemu/gpemu/__init__.py
+  Public package exports so users can import emulator and sharing classes directly.
+
+- gpemu/gpemu/gpemu/emulators.py
+  Core emulator implementations:
+  - ComputeTimeEmulator: emulates per-batch compute latency.
+  - TransferTimeEmulator: emulates CPU->GPU and model transfer delays.
+  - GPUMemoryEmulator: emulates GPU memory occupancy/checking based on profiled data.
+  - GPUPreprocessingEmulator: emulates overlap between data preprocessing and GPU-side work.
+  This file is the central simulation engine for timing and memory behavior.
+
+- gpemu/gpemu/gpemu/sharing.py
+  Client-side sharing interface. Sends requests to a broker-backed manager (Kafka or RabbitMQ) and waits for completion responses to emulate shared GPU service time.
+
+- gpemu/gpemu/gpemu/sharing_manager.py
+  Server/manager-side sharing logic. Receives work requests, simulates service duration, and returns completion events. Includes implementations for both broker types.
+
+Examples
+--------
+- gpemu/gpemu/examples/async_train.py
+  Minimal asynchronous training loop example using emulator components.
+
+- gpemu/gpemu/examples/share_app.py
+  Example client application that submits emulated compute requests to a sharing manager.
+
+- gpemu/gpemu/examples/share_manager.py
+  Example manager process that serves queued sharing requests.
+
+Tests
+-----
+- gpemu/gpemu/tests/__init__.py
+  Test package marker.
+
+- gpemu/gpemu/tests/test_emulators.py
+  Unit tests for emulator behavior including timing emulation paths, memory checks, and async workflows.
+
+Generated Packaging Metadata
+----------------------------
+- gpemu/gpemu/gpemu.egg-info/PKG-INFO
+  Generated package metadata.
+
+- gpemu/gpemu/gpemu.egg-info/SOURCES.txt
+  Generated source manifest used by packaging tools.
+
+- gpemu/gpemu/gpemu.egg-info/dependency_links.txt
+  Generated dependency-links file.
+
+- gpemu/gpemu/gpemu.egg-info/top_level.txt
+  Generated top-level package name list.
+
+
+2) gpemu/mlock
+==============
+
+Role
+----
+Native C extension that provides a pinned-memory balloon object for memory-related experiments and controlled allocation behavior.
+
+Files and What They Do
+----------------------
+- gpemu/mlock/README.md
+  Explains what the extension does and required memlock/ulimit settings.
+
+- gpemu/mlock/setup.py
+  Build script for compiling/installing the `mlock` Python C extension.
+
+- gpemu/mlock/setup.cfg
+  Package metadata config.
+
+- gpemu/mlock/MANIFEST.in
+  Packaging include rules.
+
+- gpemu/mlock/LICENSE.txt
+  License text.
+
+- gpemu/mlock/csrc/mlockmodule/mlockmodule.c
+  C source implementing the extension object (commonly exposed as a balloon-like pinned allocation object), including methods to query size and usage state.
+
+
+3) gpemu/sharing-kafka
+======================
+
+Role
+----
+Standalone scripts for running GPU-sharing emulation experiments using Kafka as the message broker.
+
+Files and What They Do
+----------------------
+- gpemu/sharing-kafka/main-emulator-share.py
+  Main experiment/training entrypoint that integrates emulated shared compute into a training loop.
+
+- gpemu/sharing-kafka/share.py
+  Lightweight sharing client wrapper around Kafka producer/consumer flow.
+
+- gpemu/sharing-kafka/sharing_manager.py
+  Manager service that consumes requests, applies scheduling/service simulation, and responds to clients.
+
+- gpemu/sharing-kafka/app.py
+  Simplified app-level script for request/response runs and throughput logging.
+
+- gpemu/sharing-kafka/profile.py
+  Profiling/benchmark runner focused on job completion and runtime measurements.
+
+- gpemu/sharing-kafka/sched.py
+  Scheduling experiment driver to compare queueing/scheduling choices under shared-resource load.
+
+- gpemu/sharing-kafka/plt.py
+  Plot helper for visualizing logged sharing experiment metrics.
+
+
+4) gpemu/sharing-rabbitmq
+=========================
+
+Role
+----
+Standalone scripts for GPU-sharing emulation experiments using RabbitMQ as the message broker.
+
+Files and What They Do
+----------------------
+- gpemu/sharing-rabbitmq/README.md
+  Setup and usage notes for RabbitMQ-based sharing runs.
+
+- gpemu/sharing-rabbitmq/install-rabbitmq.sh
+  RabbitMQ installation helper script.
+
+- gpemu/sharing-rabbitmq/main-emulator-share.py
+  Main training/experiment script using RabbitMQ-backed sharing requests.
+
+- gpemu/sharing-rabbitmq/sharing_manager.py
+  RabbitMQ manager process that serves emulated compute requests and replies through callback queues.
+
+- gpemu/sharing-rabbitmq/app.py
+  Simple RabbitMQ client app to submit requests and observe response behavior.
+
+- gpemu/sharing-rabbitmq/__pycache__/share.cpython-39.pyc
+  Generated Python bytecode cache artifact (not hand-maintained source).
+
+
+How These Pieces Work Together
+==============================
+
+1) Package-level usage:
+   A user imports classes from `gpemu/gpemu/gpemu/`.
+
+2) Emulation mode:
+   `emulators.py` provides direct local emulation for compute/transfer/memory behavior.
+
+3) Shared mode:
+   `sharing.py` submits simulated GPU work to manager services.
+
+4) Manager mode:
+   `sharing_manager.py` (or standalone folder managers) receives requests and simulates serialized/shared GPU processing.
+
+5) Broker choice:
+   - Kafka path: scripts in `gpemu/sharing-kafka/`
+   - RabbitMQ path: scripts in `gpemu/sharing-rabbitmq/`
+
+6) Native memory support:
+   `gpemu/mlock/` adds a C-level pinned-memory utility used in memory-sensitive experiments.
+
+
+Practical Notes
+===============
+- Files under `*.egg-info/` and `__pycache__/` are generated artifacts.
+- The canonical reusable library code is under `gpemu/gpemu/gpemu/`.
+- The sharing folders are experiment-driver scripts that can duplicate some functionality in package modules.
+- Installation scripts assume Linux package managers and may need updates for newer distributions.
+
+
+Complete File Inventory (Exhaustive)
+====================================
+The following is the complete list of files currently present under `gpemu/`:
+
+- gpemu/gpemu/examples/async_train.py
+- gpemu/gpemu/examples/share_app.py
+- gpemu/gpemu/examples/share_manager.py
+- gpemu/gpemu/.gitignore
+- gpemu/gpemu/gpemu.egg-info/dependency_links.txt
+- gpemu/gpemu/gpemu.egg-info/PKG-INFO
+- gpemu/gpemu/gpemu.egg-info/SOURCES.txt
+- gpemu/gpemu/gpemu.egg-info/top_level.txt
+- gpemu/gpemu/gpemu/emulators.py
+- gpemu/gpemu/gpemu/__init__.py
+- gpemu/gpemu/gpemu/sharing_manager.py
+- gpemu/gpemu/gpemu/sharing.py
+- gpemu/gpemu/install-rabbitmq.sh
+- gpemu/gpemu/README.md
+- gpemu/gpemu/setup.py
+- gpemu/gpemu/tests/__init__.py
+- gpemu/gpemu/tests/test_emulators.py
+- gpemu/mlock/csrc/mlockmodule/mlockmodule.c
+- gpemu/mlock/LICENSE.txt
+- gpemu/mlock/MANIFEST.in
+- gpemu/mlock/README.md
+- gpemu/mlock/setup.cfg
+- gpemu/mlock/setup.py
+- gpemu/sharing-kafka/app.py
+- gpemu/sharing-kafka/main-emulator-share.py
+- gpemu/sharing-kafka/plt.py
+- gpemu/sharing-kafka/profile.py
+- gpemu/sharing-kafka/sched.py
+- gpemu/sharing-kafka/share.py
+- gpemu/sharing-kafka/sharing_manager.py
+- gpemu/sharing-rabbitmq/app.py
+- gpemu/sharing-rabbitmq/install-rabbitmq.sh
+- gpemu/sharing-rabbitmq/main-emulator-share.py
+- gpemu/sharing-rabbitmq/__pycache__/share.cpython-39.pyc
+- gpemu/sharing-rabbitmq/README.md
+- gpemu/sharing-rabbitmq/sharing_manager.py

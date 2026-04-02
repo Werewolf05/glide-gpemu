@@ -1,0 +1,12 @@
+LICENSE.txt
+MANIFEST.in
+README.md
+setup.cfg
+setup.py
+MinIO_Cache.egg-info/PKG-INFO
+MinIO_Cache.egg-info/SOURCES.txt
+MinIO_Cache.egg-info/dependency_links.txt
+MinIO_Cache.egg-info/top_level.txt
+csrc/minio/minio.c
+csrc/miniomodule/miniomodule.c
+csrc/utils/utils.c

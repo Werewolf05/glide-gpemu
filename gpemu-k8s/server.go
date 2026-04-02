@@ -5,9 +5,9 @@ import (
 	"log"
 	"net"
 	"os"
-	"path"
-	"time"
+	"path/filepath"
 	"strconv"
+	"time"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -22,13 +22,14 @@ const (
 type GPEmuDevicePluginConfig struct {
 	ResourceName               string        `json:"resourceName"`
 	SocketName                 string        `json:"socketName"`
-	EGPUs                []*EGPU `json:"eGPUs"`
+	EGPUs                      []*EGPU       `json:"eGPUs"`
 	HealthCheckIntervalSeconds time.Duration `json:"healthCheckIntervalSeconds"`
 }
 
 type GPEmuDevicePlugin struct {
 	resourceName               string
 	socket                     string
+	kubeletSocket              string
 	healthCheckIntervalSeconds time.Duration
 	devs                       []*pluginapi.Device
 
@@ -46,7 +47,7 @@ var (
 )
 
 // NewGPEmuDevicePlugin returns an initialized GPEmuDevicePlugin
-func NewGPEmuDevicePlugin(config GPEmuDevicePluginConfig) (*GPEmuDevicePlugin, error) {
+func NewGPEmuDevicePlugin(config GPEmuDevicePluginConfig, devicePluginPath string) (*GPEmuDevicePlugin, error) {
 	expandedEGPUs := []*ExpandedEGPU{}
 	for _, hd := range config.EGPUs {
 		expanded, err := hd.Expand()
@@ -71,7 +72,6 @@ func NewGPEmuDevicePlugin(config GPEmuDevicePluginConfig) (*GPEmuDevicePlugin, e
 
 	log.Println("devs: ", devs)
 
-
 	healthCheckIntervalSeconds := defaultHealthCheckIntervalSeconds
 	if config.HealthCheckIntervalSeconds > 0 {
 		healthCheckIntervalSeconds = config.HealthCheckIntervalSeconds
@@ -79,10 +79,11 @@ func NewGPEmuDevicePlugin(config GPEmuDevicePluginConfig) (*GPEmuDevicePlugin, e
 
 	return &GPEmuDevicePlugin{
 		resourceName:               config.ResourceName,
-		socket:                     pluginapi.DevicePluginPath + config.SocketName,
+		socket:                     filepath.Join(devicePluginPath, config.SocketName),
+		kubeletSocket:              kubeletSocketPath(devicePluginPath),
 		healthCheckIntervalSeconds: healthCheckIntervalSeconds,
 
-		devs:        devs,
+		devs:  devs,
 		eGPUs: expandedEGPUs,
 
 		stop:   make(chan interface{}),
@@ -105,7 +106,6 @@ func dial(unixSocketPath string, timeout time.Duration) (*grpc.ClientConn, error
 
 	return c, nil
 }
-
 
 // Start starts the gRPC server of the device plugin
 func (m *GPEmuDevicePlugin) Start() error {
@@ -161,7 +161,7 @@ func (m *GPEmuDevicePlugin) Register(kubeletEndpoint, resourceName string) error
 	client := pluginapi.NewRegistrationClient(conn)
 	reqt := &pluginapi.RegisterRequest{
 		Version:      pluginapi.Version,
-		Endpoint:     path.Base(m.socket),
+		Endpoint:     filepath.Base(m.socket),
 		ResourceName: resourceName,
 	}
 
@@ -282,7 +282,18 @@ func (m *GPEmuDevicePlugin) Serve() error {
 	}
 	log.Println("Starting to serve on", m.socket)
 
-	err = m.Register(pluginapi.KubeletSocket, m.resourceName)
+	if _, err := os.Stat(m.kubeletSocket); err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("Kubelet socket %s not found; running in standby mode until it appears.", m.kubeletSocket)
+			return nil
+		}
+
+		log.Printf("Could not stat kubelet socket %s: %s", m.kubeletSocket, err)
+		m.Stop()
+		return err
+	}
+
+	err = m.Register(m.kubeletSocket, m.resourceName)
 	if err != nil {
 		log.Printf("Could not register device plugin: %s", err)
 		m.Stop()

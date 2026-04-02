@@ -2,6 +2,7 @@
 import pandas as pd
 import torch
 from torch import nn
+from torch.amp import autocast, GradScaler
 
 from utils.memory import _add_memory_hooks
 from utils.plot import plot_mem_by_time
@@ -14,6 +15,19 @@ import sys
 import argparse
 import torchvision.models as models
 import os
+
+try:
+    from transformers import (
+        Data2VecAudioForSequenceClassification,
+        HubertForSequenceClassification,
+        Wav2Vec2ForSequenceClassification,
+        Wav2Vec2Processor,
+    )
+except ImportError:
+    Data2VecAudioForSequenceClassification = None
+    HubertForSequenceClassification = None
+    Wav2Vec2ForSequenceClassification = None
+    Wav2Vec2Processor = None
 
 class UserDefinedModel(nn.Module):
     def __init__(self, input_shape):
@@ -36,7 +50,7 @@ class UserDefinedModel(nn.Module):
         return x
     
     def get_optimizer(self):
-        return optim.SGD(model.parameters(), lr=0.01)
+        return torch.optim.SGD(self.parameters(), lr=0.01)
     
     def get_criterion(self):
         return nn.MSELoss()
@@ -100,6 +114,9 @@ parser.add_argument('--profile_batches', default=3, type=int,
 args = parser.parse_args()
 cudnn.benchmark = True
 
+if not torch.cuda.is_available():
+    raise RuntimeError("CUDA is required for memory profiling but no GPU is available.")
+
 if args.arch == "user_defined":
     model = UserDefinedModel(args.input_dim)
     criterion = model.get_criterion()
@@ -111,6 +128,10 @@ elif args.category == 'vision':
                             momentum=args.momentum,
                             weight_decay=args.weight_decay)
 elif args.category == 'speech':
+    if Wav2Vec2ForSequenceClassification is None:
+        raise ImportError(
+            "Speech profiling requires transformers. Install it with: pip install transformers"
+        )
     if 'wav2vec2' in args.arch:
         model = Wav2Vec2ForSequenceClassification.from_pretrained(args.arch, num_labels=args.num_classes).cuda(args.gpu)
         processor = Wav2Vec2Processor.from_pretrained(args.arch)
@@ -122,7 +143,7 @@ elif args.category == 'speech':
         processor = Wav2Vec2Processor.from_pretrained(args.arch)
     else:
         raise ValueError("Unsupported model type")
-    scaler = GradScaler()
+    scaler = GradScaler(device='cuda')
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.CrossEntropyLoss()
 
@@ -197,7 +218,7 @@ for i in range(args.profile_batches):
     if args.category == 'vision':
         outputs = model(inputs)
     elif args.category == 'speech':
-        with autocast():
+        with autocast(device_type='cuda'):
             outputs = model(**inputs)
 
     # Calculate loss

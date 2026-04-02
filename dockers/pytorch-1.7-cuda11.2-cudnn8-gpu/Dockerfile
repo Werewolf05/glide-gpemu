@@ -31,8 +31,7 @@ ENV PATH="/root/anaconda3/bin:${PATH}"
 
 # Install Python dependencies
 RUN conda install -y astunparse numpy ninja pyyaml mkl mkl-include setuptools \
-    cmake cffi typing_extensions future six requests dataclasses && \
-    conda install -y -c pytorch magma-cuda112
+    cmake cffi typing_extensions future six requests dataclasses
 
 # Clone repositories
 WORKDIR /opt
@@ -48,7 +47,7 @@ ARG PYTORCH_VERSION_TAG=original-pytorch-v1.7
 WORKDIR /opt/pytorch-gpemu
 RUN git checkout ${PYTORCH_VERSION_TAG} && \
     git submodule update --init --recursive && \
-    python setup.py install
+    USE_CUDA=0 USE_NCCL=0 USE_DISTRIBUTED=0 USE_GLOO=0 BUILD_TEST=0 MAX_JOBS=4 python setup.py install
 
 ARG TORCHVISION_VERSION_TAG=original-torchvision-v0.8.2
 
