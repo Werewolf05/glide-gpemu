@@ -1,7 +1,10 @@
 import argparse
+import fcntl
+import json
 import os
 import random
 import shutil
+import sys
 import time
 import warnings
 from enum import Enum
@@ -79,10 +82,102 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
 parser.add_argument('--dummy', action='store_true', help="use fake data to benchmark")
 
 best_acc1 = 0
+GLIDE_METRICS_PATH = '/workspace/gpemu/glide/glide_metrics.json'
+GLIDE_SELECTED_MODEL_PATH = '/workspace/gpemu/glide/selected_model.json'
+
+
+def _load_selected_model(default_model):
+    if not os.path.exists(GLIDE_SELECTED_MODEL_PATH):
+        return default_model
+
+    try:
+        with open(GLIDE_SELECTED_MODEL_PATH, 'r', encoding='utf-8') as selected_file:
+            data = json.load(selected_file)
+            if not isinstance(data, dict):
+                return default_model
+            selected_model = data.get('model')
+            if isinstance(selected_model, str):
+                normalized = selected_model.strip().lower()
+                if normalized in model_names:
+                    return normalized
+    except (OSError, json.JSONDecodeError):
+        return default_model
+
+    return default_model
+
+
+def _write_metrics_locked(update_fn):
+    os.makedirs(os.path.dirname(GLIDE_METRICS_PATH), exist_ok=True)
+    with open(GLIDE_METRICS_PATH, 'a+', encoding='utf-8') as metrics_file:
+        fcntl.flock(metrics_file.fileno(), fcntl.LOCK_EX)
+        try:
+            metrics_file.seek(0)
+            raw = metrics_file.read().strip()
+            data = {}
+            if raw:
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    data = {}
+            updated = update_fn(data)
+            metrics_file.seek(0)
+            metrics_file.truncate()
+            json.dump(updated, metrics_file)
+            metrics_file.flush()
+            os.fsync(metrics_file.fileno())
+        finally:
+            fcntl.flock(metrics_file.fileno(), fcntl.LOCK_UN)
+
+
+def initialize_glide_metrics(args, total_expected_batches):
+    start_time = time.time()
+
+    def _init(_):
+        return {
+            'batches': [],
+            'status': 'running',
+            'model': args.arch,
+            'batch_size': args.batch_size,
+            'start_time': start_time,
+            'total_expected_batches': total_expected_batches
+        }
+
+    _write_metrics_locked(_init)
+
+
+def append_glide_batch_metric(compute_time, batch_index):
+    timestamp = time.time()
+
+    def _append(data):
+        batches = data.get('batches')
+        if not isinstance(batches, list):
+            batches = []
+        batches.append({
+            'batch': int(batch_index),
+            'compute_time': float(compute_time),
+            'timestamp': float(timestamp)
+        })
+        data['batches'] = batches
+        data['status'] = 'running'
+        return data
+
+    _write_metrics_locked(_append)
+
+
+def finalize_glide_metrics():
+    def _finalize(data):
+        data['status'] = 'completed'
+        data['end_time'] = time.time()
+        return data
+
+    _write_metrics_locked(_finalize)
 
 
 def main():
     args = parser.parse_args()
+
+    if '-a' not in sys.argv and '--arch' not in sys.argv:
+        args.arch = _load_selected_model(args.arch)
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -147,7 +242,7 @@ def main_worker(gpu, ngpus_per_node, args):
         print("=> creating model '{}'".format(args.arch))
         model = models.__dict__[args.arch]()
 
-    if not torch.cuda.is_available() and not torch.backends.mps.is_available():
+    if not torch.cuda.is_available():
         print('using CPU, this will be slow')
     elif args.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor
@@ -171,7 +266,7 @@ def main_worker(gpu, ngpus_per_node, args):
     elif args.gpu is not None and torch.cuda.is_available():
         torch.cuda.set_device(args.gpu)
         model = model.cuda(args.gpu)
-    elif torch.backends.mps.is_available():
+    elif False:
         device = torch.device("mps")
         model = model.to(device)
     else:
@@ -187,7 +282,7 @@ def main_worker(gpu, ngpus_per_node, args):
             device = torch.device('cuda:{}'.format(args.gpu))
         else:
             device = torch.device("cuda")
-    elif torch.backends.mps.is_available():
+    elif False:
         device = torch.device("mps")
     else:
         device = torch.device("cpu")
@@ -224,6 +319,8 @@ def main_worker(gpu, ngpus_per_node, args):
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
+
+    metrics_writer_enabled = (not args.distributed) or args.rank in (-1, 0)
 
     # Data loading code
     if args.dummy:
@@ -273,12 +370,16 @@ def main_worker(gpu, ngpus_per_node, args):
         validate(val_loader, model, criterion, args)
         return
 
+    if metrics_writer_enabled:
+        total_expected_batches = len(train_loader) * max(0, args.epochs - args.start_epoch)
+        initialize_glide_metrics(args, total_expected_batches)
+
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             train_sampler.set_epoch(epoch)
 
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch, device, args)
+        train(train_loader, model, criterion, optimizer, epoch, device, args, metrics_writer_enabled)
 
         # evaluate on validation set
         # acc1 = validate(val_loader, model, criterion, args)
@@ -300,8 +401,11 @@ def main_worker(gpu, ngpus_per_node, args):
         #         'scheduler' : scheduler.state_dict()
         #     }, is_best)
 
+    if metrics_writer_enabled:
+        finalize_glide_metrics()
 
-def train(train_loader, model, criterion, optimizer, epoch, device, args):
+
+def train(train_loader, model, criterion, optimizer, epoch, device, args, metrics_writer_enabled):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -324,7 +428,8 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
         images = images.to(device, non_blocking=False)
         target = target.to(device, non_blocking=False)
 
-        torch.cuda.synchronize()
+        # if torch.cuda.is_available():
+        #     torch.cuda.synchronize()
         compute_start = time.time()
 
         # compute output
@@ -346,9 +451,15 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
         batch_time.update(time.time() - end)
         end = time.time()
 
-        torch.cuda.synchronize()
+        # if torch.cuda.is_available():
+        #     torch.cuda.synchronize()
         compute_end = time.time()
-        print(f"Batch {i} compute time: {compute_end - compute_start}")
+        compute_time = compute_end - compute_start
+        print(f"Batch {i} compute time: {compute_time}")
+
+        if metrics_writer_enabled:
+            batch_index = (epoch * len(train_loader)) + i
+            append_glide_batch_metric(compute_time, batch_index)
 
         # if i % args.print_freq == 0:
         #     progress.display(i + 1)
@@ -363,7 +474,7 @@ def validate(val_loader, model, criterion, args):
                 i = base_progress + i
                 if args.gpu is not None and torch.cuda.is_available():
                     images = images.cuda(args.gpu, non_blocking=True)
-                if torch.backends.mps.is_available():
+                if False:
                     images = images.to('mps')
                     target = target.to('mps')
                 if torch.cuda.is_available():
@@ -450,7 +561,7 @@ class AverageMeter(object):
     def all_reduce(self):
         if torch.cuda.is_available():
             device = torch.device("cuda")
-        elif torch.backends.mps.is_available():
+        elif False:
             device = torch.device("mps")
         else:
             device = torch.device("cpu")
