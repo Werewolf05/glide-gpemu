@@ -24,6 +24,11 @@ import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Subset
 
+try:
+    from gpemu import ComputeTimeEmulator
+except ImportError:
+    ComputeTimeEmulator = None
+
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
@@ -80,10 +85,19 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
                          'fastest way to use PyTorch for either single node or '
                          'multi node data parallel training')
 parser.add_argument('--dummy', action='store_true', help="use fake data to benchmark")
+parser.add_argument('--gpemu-enable', action='store_true',
+                    help='enable GPEmu compute-time emulation')
+parser.add_argument('--gpemu-gpu', default=None, type=str,
+                    help='GPU profile name in profiled_data (for example Tesla_V100-PCIE-32GB)')
+parser.add_argument('--gpemu-db-path', default='/workspace/gpemu/profiled_data', type=str,
+                    help='path to profiled_data root used by GPEmu')
+parser.add_argument('--gpemu-config', default='/workspace/gpemu/glide/selected_gpu.json', type=str,
+                    help='path to GLIDE GPU config JSON')
 
 best_acc1 = 0
 GLIDE_METRICS_PATH = '/workspace/gpemu/glide/glide_metrics.json'
 GLIDE_SELECTED_MODEL_PATH = '/workspace/gpemu/glide/selected_model.json'
+GLIDE_SELECTED_GPU_PATH = '/workspace/gpemu/glide/selected_gpu.json'
 
 
 def _load_selected_model(default_model):
@@ -104,6 +118,39 @@ def _load_selected_model(default_model):
         return default_model
 
     return default_model
+
+
+def _load_selected_gpu_config(config_path):
+    fallback = {
+        'gpu': 'Tesla_M40',
+        'database_path': '/workspace/gpemu/profiled_data',
+        'profile_path': ''
+    }
+
+    path = config_path or GLIDE_SELECTED_GPU_PATH
+    if not os.path.exists(path):
+        return fallback
+
+    try:
+        with open(path, 'r', encoding='utf-8') as selected_file:
+            data = json.load(selected_file)
+            if not isinstance(data, dict):
+                return fallback
+
+            gpu_value = data.get('gpu')
+            database_path = data.get('database_path')
+            profile_path = data.get('profile_path')
+
+            if isinstance(gpu_value, str) and gpu_value.strip():
+                fallback['gpu'] = gpu_value.strip()
+            if isinstance(database_path, str) and database_path.strip():
+                fallback['database_path'] = database_path.strip()
+            if isinstance(profile_path, str) and profile_path.strip():
+                fallback['profile_path'] = profile_path.strip()
+    except (OSError, json.JSONDecodeError):
+        return fallback
+
+    return fallback
 
 
 def _write_metrics_locked(update_fn):
@@ -137,6 +184,7 @@ def initialize_glide_metrics(args, total_expected_batches):
             'batches': [],
             'status': 'running',
             'model': args.arch,
+            'selected_gpu': args.gpemu_gpu,
             'batch_size': args.batch_size,
             'start_time': start_time,
             'total_expected_batches': total_expected_batches
@@ -178,6 +226,19 @@ def main():
 
     if '-a' not in sys.argv and '--arch' not in sys.argv:
         args.arch = _load_selected_model(args.arch)
+
+    if '--gpemu-config' not in sys.argv:
+        args.gpemu_config = GLIDE_SELECTED_GPU_PATH
+
+    gpu_config = _load_selected_gpu_config(args.gpemu_config)
+    if '--gpemu-gpu' not in sys.argv:
+        args.gpemu_gpu = gpu_config['gpu']
+    if '--gpemu-db-path' not in sys.argv:
+        args.gpemu_db_path = gpu_config['database_path']
+
+    # Selecting a GPU profile from GLIDE implies emulation should be active.
+    if '--gpemu-enable' not in sys.argv:
+        args.gpemu_enable = bool(args.gpemu_gpu)
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -366,6 +427,24 @@ def main_worker(gpu, ngpus_per_node, args):
         val_dataset, batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True, sampler=val_sampler)
 
+    compute_emulator = None
+    if args.gpemu_enable and ComputeTimeEmulator is not None:
+        try:
+            compute_emulator = ComputeTimeEmulator(
+                gpu=args.gpemu_gpu,
+                model=args.arch,
+                batch_size=args.batch_size,
+                from_databse=True,
+                database_path=args.gpemu_db_path,
+                mode='sync'
+            )
+            print(f"[GPEmu] enabled with gpu={args.gpemu_gpu}, model={args.arch}, db={args.gpemu_db_path}")
+        except Exception as exc:
+            compute_emulator = None
+            print(f"[GPEmu] failed to initialize emulator: {exc}")
+    elif args.gpemu_enable and ComputeTimeEmulator is None:
+        print('[GPEmu] requested but gpemu package is unavailable in this environment')
+
     if args.evaluate:
         validate(val_loader, model, criterion, args)
         return
@@ -379,7 +458,7 @@ def main_worker(gpu, ngpus_per_node, args):
             train_sampler.set_epoch(epoch)
 
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch, device, args, metrics_writer_enabled)
+        train(train_loader, model, criterion, optimizer, epoch, device, args, metrics_writer_enabled, compute_emulator)
 
         # evaluate on validation set
         # acc1 = validate(val_loader, model, criterion, args)
@@ -405,7 +484,7 @@ def main_worker(gpu, ngpus_per_node, args):
         finalize_glide_metrics()
 
 
-def train(train_loader, model, criterion, optimizer, epoch, device, args, metrics_writer_enabled):
+def train(train_loader, model, criterion, optimizer, epoch, device, args, metrics_writer_enabled, compute_emulator):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -454,7 +533,22 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args, metric
         # if torch.cuda.is_available():
         #     torch.cuda.synchronize()
         compute_end = time.time()
-        compute_time = compute_end - compute_start
+        measured_compute_time = compute_end - compute_start
+        emulated_compute_time = None
+
+        if compute_emulator is not None:
+            try:
+                emulated_compute_time = (
+                    float(compute_emulator.get_forward_time())
+                    + float(compute_emulator.get_backward_time())
+                )
+                delay_needed = max(0.0, emulated_compute_time - measured_compute_time)
+                if delay_needed > 0:
+                    time.sleep(delay_needed)
+            except Exception as exc:
+                print(f"[GPEmu] emulate_compute failed on batch {i}: {exc}")
+
+        compute_time = emulated_compute_time if emulated_compute_time is not None else measured_compute_time
         print(f"Batch {i} compute time: {compute_time}")
 
         if metrics_writer_enabled:

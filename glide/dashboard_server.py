@@ -10,7 +10,11 @@ from flask import Flask, jsonify, render_template_string, request
 GLIDE_DIR = '/workspace/gpemu/glide'
 METRICS_PATH = os.path.join(GLIDE_DIR, 'glide_metrics.json')
 SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
+SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
+PROFILED_DATA_ROOT = '/workspace/gpemu/profiled_data'
+FALLBACK_PROFILED_DATA_ROOT = '/home/pranav/gpemu/profiled_data'
 DEFAULT_MODEL = 'resnet18'
+DEFAULT_GPU = 'Tesla_M40'
 
 MODEL_CATALOG: Dict[str, Dict[str, str]] = {
     'resnet18': {
@@ -44,6 +48,141 @@ MODEL_CATALOG: Dict[str, Dict[str, str]] = {
         'use_case': 'Resource-constrained inference and efficiency demos.'
     }
 }
+
+
+def _resolve_profiled_data_root() -> str:
+  if os.path.isdir(PROFILED_DATA_ROOT):
+    return PROFILED_DATA_ROOT
+  return FALLBACK_PROFILED_DATA_ROOT
+
+
+def _memory_from_gpu_name(gpu_name: str) -> str:
+  upper = gpu_name.upper()
+  if '40GB' in upper:
+    return '40 GB'
+  if '32GB' in upper:
+    return '32 GB'
+  if '16GB' in upper:
+    return '16 GB'
+  if 'K80' in upper:
+    return '24 GB'
+  if 'M40' in upper:
+    return '24 GB'
+  if 'RTX_6000' in upper:
+    return '24 GB'
+  return 'Unknown'
+
+
+def _scan_gpu_profiles() -> Dict[str, Any]:
+  root = _resolve_profiled_data_root()
+  compute_forward_root = os.path.join(root, 'time', 'compute', 'forward')
+  transfer_root = os.path.join(root, 'time', 'transfer')
+  memory_root = os.path.join(root, 'memory')
+
+  gpu_map: Dict[str, Dict[str, Any]] = {}
+  model_set = set(MODEL_CATALOG.keys())
+
+  if os.path.isdir(compute_forward_root):
+    for gpu_name in sorted(os.listdir(compute_forward_root)):
+      gpu_dir = os.path.join(compute_forward_root, gpu_name)
+      if not os.path.isdir(gpu_dir):
+        continue
+
+      model_dirs = []
+      for model_name in sorted(os.listdir(gpu_dir)):
+        model_dir = os.path.join(gpu_dir, model_name)
+        if os.path.isdir(model_dir):
+          model_dirs.append(model_name)
+          model_set.add(model_name)
+
+      gpu_map[gpu_name] = {
+        'name': gpu_name,
+        'profile_path': gpu_dir,
+        'memory_gb': _memory_from_gpu_name(gpu_name),
+        'models': model_dirs,
+        'compute_profile_count': len(model_dirs),
+        'has_transfer_profiles': os.path.isdir(os.path.join(transfer_root, gpu_name)),
+        'has_memory_profiles': os.path.isdir(os.path.join(memory_root, gpu_name))
+      }
+
+  return {
+    'root': root,
+    'gpus': gpu_map,
+    'models': sorted(model_set)
+  }
+
+
+def _normalize_gpu(gpu_value: Any) -> str:
+  profiles = _scan_gpu_profiles()
+  gpus = profiles['gpus']
+  if isinstance(gpu_value, str):
+    key = gpu_value.strip()
+    if key in gpus:
+      return key
+
+  if DEFAULT_GPU in gpus:
+    return DEFAULT_GPU
+  if gpus:
+    return sorted(gpus.keys())[0]
+  return DEFAULT_GPU
+
+
+def _gpu_info(gpu_name: str) -> Dict[str, Any]:
+  profiles = _scan_gpu_profiles()
+  gpus = profiles['gpus']
+  normalized = _normalize_gpu(gpu_name)
+  if normalized in gpus:
+    return gpus[normalized]
+  return {
+    'name': normalized,
+    'profile_path': '',
+    'memory_gb': _memory_from_gpu_name(normalized),
+    'models': [],
+    'compute_profile_count': 0,
+    'has_transfer_profiles': False,
+    'has_memory_profiles': False
+  }
+
+
+def _load_selected_gpu() -> str:
+  if not os.path.exists(SELECTED_GPU_PATH):
+    return _normalize_gpu(DEFAULT_GPU)
+
+  try:
+    with open(SELECTED_GPU_PATH, 'r', encoding='utf-8') as gpu_file:
+      data = json.load(gpu_file)
+      if isinstance(data, dict):
+        return _normalize_gpu(data.get('gpu'))
+  except (OSError, json.JSONDecodeError):
+    return _normalize_gpu(DEFAULT_GPU)
+
+  return _normalize_gpu(DEFAULT_GPU)
+
+
+def _save_selected_gpu(gpu_name: str) -> str:
+  selected_gpu = _normalize_gpu(gpu_name)
+  gpu_data = _gpu_info(selected_gpu)
+  os.makedirs(GLIDE_DIR, exist_ok=True)
+
+  payload = {
+    'gpu': selected_gpu,
+    'profile_path': gpu_data.get('profile_path', ''),
+    'database_path': _resolve_profiled_data_root(),
+    'updated_at': time.time()
+  }
+
+  with open(SELECTED_GPU_PATH, 'a+', encoding='utf-8') as gpu_file:
+    fcntl.flock(gpu_file.fileno(), fcntl.LOCK_EX)
+    try:
+      gpu_file.seek(0)
+      gpu_file.truncate()
+      json.dump(payload, gpu_file)
+      gpu_file.flush()
+      os.fsync(gpu_file.fileno())
+    finally:
+      fcntl.flock(gpu_file.fileno(), fcntl.LOCK_UN)
+
+  return selected_gpu
 
 
 app = Flask(__name__)
@@ -217,12 +356,12 @@ DASHBOARD_HTML = """
 
     .controls {
       display: grid;
-      grid-template-columns: 2fr 1fr;
+      grid-template-columns: 2fr 1fr 1fr;
       gap: 12px;
       margin-bottom: 14px;
     }
 
-    .control-card, .model-info {
+    .control-card, .model-info, .gpu-info {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 12px;
@@ -445,20 +584,21 @@ DASHBOARD_HTML = """
 
     <div class="controls">
       <div class="control-card">
-        <div class="input-label">Model Selector</div>
+        <div class="input-label">Model + GPU Selector</div>
         <div class="control-row">
           <div>
             <select id="modelSelector">
-              <option value="resnet18">ResNet18</option>
-              <option value="resnet50">ResNet50</option>
-              <option value="alexnet">AlexNet</option>
-              <option value="vgg16">VGG16</option>
-              <option value="squeezenet1_0">SqueezeNet</option>
+              <option value="resnet18">resnet18</option>
+            </select>
+          </div>
+          <div>
+            <select id="gpuSelector">
+              <option value="Tesla_M40">Tesla_M40</option>
             </select>
           </div>
           <button class="btn" id="startRunBtn">Start New Run</button>
         </div>
-        <div class="hint">Select a model, then launch your training command. The selected model is saved and used by main.py at startup.</div>
+        <div class="hint">Select a model and GPU profile, then launch training. Both selections are persisted and used by main.py at startup.</div>
       </div>
 
       <div class="model-info">
@@ -467,6 +607,14 @@ DASHBOARD_HTML = """
         <div class="model-line" id="modelDesc">A compact image classifier with residual skip connections.</div>
         <div class="model-line" id="modelLayers"><strong>Layers:</strong> 18</div>
         <div class="model-line" id="modelUseCase"><strong>Use case:</strong> Fast baseline image classification and education demos.</div>
+      </div>
+
+      <div class="gpu-info">
+        <div class="input-label">Selected GPU Info</div>
+        <div class="model-name" id="gpuName">Tesla_M40</div>
+        <div class="model-line" id="gpuMemory"><strong>Memory:</strong> Unknown</div>
+        <div class="model-line" id="gpuProfiles"><strong>Compute profiles:</strong> 0</div>
+        <div class="model-line" id="gpuExtras"><strong>Other:</strong> transfer N/A | memory N/A</div>
       </div>
     </div>
 
@@ -611,6 +759,45 @@ DASHBOARD_HTML = """
       document.getElementById('pageTitle').textContent = `GLIDE Metrics Console • ${modelTitle}`;
     }
 
+    function updateGpuInfo(gpuInfo, gpuKey) {
+      const info = gpuInfo || {};
+      const gpuName = info.name || gpuKey || 'Unknown';
+      document.getElementById('gpuName').textContent = gpuName;
+      document.getElementById('gpuMemory').innerHTML = `<strong>Memory:</strong> ${info.memory_gb || 'Unknown'}`;
+      document.getElementById('gpuProfiles').innerHTML = `<strong>Compute profiles:</strong> ${info.compute_profile_count ?? 0}`;
+      const transfer = info.has_transfer_profiles ? 'transfer yes' : 'transfer no';
+      const memory = info.has_memory_profiles ? 'memory yes' : 'memory no';
+      document.getElementById('gpuExtras').innerHTML = `<strong>Other:</strong> ${transfer} | ${memory}`;
+    }
+
+    function populateSelectors(metrics) {
+      const models = Array.isArray(metrics.available_models) ? metrics.available_models : [];
+      const gpus = Array.isArray(metrics.available_gpus) ? metrics.available_gpus : [];
+
+      const modelSelector = document.getElementById('modelSelector');
+      const gpuSelector = document.getElementById('gpuSelector');
+
+      if (models.length > 0) {
+        const currentModel = metrics.selected_model || modelSelector.value;
+        modelSelector.innerHTML = models
+          .map((model) => `<option value="${model}">${model}</option>`)
+          .join('');
+        if (models.includes(currentModel)) {
+          modelSelector.value = currentModel;
+        }
+      }
+
+      if (gpus.length > 0) {
+        const currentGpu = metrics.selected_gpu || gpuSelector.value;
+        gpuSelector.innerHTML = gpus
+          .map((gpu) => `<option value="${gpu}">${gpu}</option>`)
+          .join('');
+        if (gpus.includes(currentGpu)) {
+          gpuSelector.value = currentGpu;
+        }
+      }
+    }
+
     function updateCards(metrics) {
       document.getElementById('avgCard').textContent = fmt(metrics.avg_compute_time);
       document.getElementById('minCard').textContent = fmt(metrics.min_compute_time);
@@ -620,11 +807,13 @@ DASHBOARD_HTML = """
       document.getElementById('etaCard').textContent = formatSeconds(metrics.eta_seconds);
 
       const activeModel = metrics.active_model || metrics.selected_model || 'resnet18';
+      const activeGpu = metrics.selected_gpu || 'Tesla_M40';
       const expected = metrics.total_expected_batches || '?';
       const bs = metrics.batch_size || '32';
-      document.getElementById('meta').textContent = `Model ${activeModel.toUpperCase()} | Batch Size ${bs} | Expected Batches ${expected}`;
+      document.getElementById('meta').textContent = `Model ${activeModel.toUpperCase()} | GPU ${activeGpu} | Batch Size ${bs} | Expected Batches ${expected}`;
 
       updateModelInfo(metrics.model_info, activeModel);
+      updateGpuInfo(metrics.gpu_info, activeGpu);
     }
 
     function updateChart(batches) {
@@ -650,6 +839,16 @@ DASHBOARD_HTML = """
       updateModelInfo(payload.model_info, payload.selected_model);
     }
 
+    async function setGpuSelection(gpu) {
+      const response = await fetch('/api/set_gpu', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gpu })
+      });
+      const payload = await response.json();
+      updateGpuInfo(payload.gpu_info, payload.selected_gpu);
+    }
+
     async function startNewRun() {
       await fetch('/api/start_new_run', { method: 'POST' });
       resetDashboardState();
@@ -662,10 +861,18 @@ DASHBOARD_HTML = """
         const metrics = await response.json();
         const batches = Array.isArray(metrics.batches) ? metrics.batches : [];
 
+        populateSelectors(metrics);
+
         const selector = document.getElementById('modelSelector');
         const selected = metrics.selected_model || 'resnet18';
         if (selector.value !== selected) {
           selector.value = selected;
+        }
+
+        const gpuSelector = document.getElementById('gpuSelector');
+        const selectedGpu = metrics.selected_gpu || 'Tesla_M40';
+        if (gpuSelector.value !== selectedGpu) {
+          gpuSelector.value = selectedGpu;
         }
 
         setStatus(metrics.status, batches.length > 0);
@@ -687,6 +894,13 @@ DASHBOARD_HTML = """
       }
     });
 
+    document.getElementById('gpuSelector').addEventListener('change', async (evt) => {
+      try {
+        await setGpuSelection(evt.target.value);
+      } catch (_err) {
+      }
+    });
+
     document.getElementById('startRunBtn').addEventListener('click', async () => {
       try {
         await startNewRun();
@@ -703,206 +917,241 @@ DASHBOARD_HTML = """
 
 
 def _normalize_model(model_value: Any) -> str:
-    if not isinstance(model_value, str):
-        return DEFAULT_MODEL
-    key = model_value.strip().lower()
-    if key in MODEL_CATALOG:
-        return key
+  if not isinstance(model_value, str):
     return DEFAULT_MODEL
+  key = model_value.strip().lower()
+  if key in MODEL_CATALOG:
+    return key
+  profiles = _scan_gpu_profiles()
+  if key in profiles['models']:
+    return key
+  return DEFAULT_MODEL
 
 
 def _model_info(model_key: str) -> Dict[str, str]:
-    model = _normalize_model(model_key)
+  model = _normalize_model(model_key)
+  if model in MODEL_CATALOG:
     return MODEL_CATALOG[model]
+  return {
+    'display_name': model,
+    'description': 'Profiled model available for GPEmu timing emulation.',
+    'layers': 'Unknown',
+    'use_case': 'Use for profiled emulation experiments.'
+  }
 
 
 def _load_selected_model() -> str:
-    if not os.path.exists(SELECTED_MODEL_PATH):
-        return DEFAULT_MODEL
-
-    try:
-        with open(SELECTED_MODEL_PATH, 'r', encoding='utf-8') as model_file:
-            data = json.load(model_file)
-            if isinstance(data, dict):
-                return _normalize_model(data.get('model'))
-    except (OSError, json.JSONDecodeError):
-        return DEFAULT_MODEL
-
+  if not os.path.exists(SELECTED_MODEL_PATH):
     return DEFAULT_MODEL
+
+  try:
+    with open(SELECTED_MODEL_PATH, 'r', encoding='utf-8') as model_file:
+      data = json.load(model_file)
+      if isinstance(data, dict):
+        return _normalize_model(data.get('model'))
+  except (OSError, json.JSONDecodeError):
+    return DEFAULT_MODEL
+
+  return DEFAULT_MODEL
 
 
 def _save_selected_model(model_key: str) -> str:
-    model = _normalize_model(model_key)
-    os.makedirs(GLIDE_DIR, exist_ok=True)
+  model = _normalize_model(model_key)
+  os.makedirs(GLIDE_DIR, exist_ok=True)
 
-    with open(SELECTED_MODEL_PATH, 'a+', encoding='utf-8') as model_file:
-        fcntl.flock(model_file.fileno(), fcntl.LOCK_EX)
-        try:
-            model_file.seek(0)
-            model_file.truncate()
-            json.dump({'model': model, 'updated_at': time.time()}, model_file)
-            model_file.flush()
-            os.fsync(model_file.fileno())
-        finally:
-            fcntl.flock(model_file.fileno(), fcntl.LOCK_UN)
+  with open(SELECTED_MODEL_PATH, 'a+', encoding='utf-8') as model_file:
+    fcntl.flock(model_file.fileno(), fcntl.LOCK_EX)
+    try:
+      model_file.seek(0)
+      model_file.truncate()
+      json.dump({'model': model, 'updated_at': time.time()}, model_file)
+      model_file.flush()
+      os.fsync(model_file.fileno())
+    finally:
+      fcntl.flock(model_file.fileno(), fcntl.LOCK_UN)
 
-    return model
+  return model
 
 
 def _clear_metrics_file() -> None:
-    os.makedirs(GLIDE_DIR, exist_ok=True)
-    with open(METRICS_PATH, 'a+', encoding='utf-8') as metrics_file:
-        fcntl.flock(metrics_file.fileno(), fcntl.LOCK_EX)
-        try:
-            metrics_file.seek(0)
-            metrics_file.truncate()
-            metrics_file.flush()
-            os.fsync(metrics_file.fileno())
-        finally:
-            fcntl.flock(metrics_file.fileno(), fcntl.LOCK_UN)
+  os.makedirs(GLIDE_DIR, exist_ok=True)
+  with open(METRICS_PATH, 'a+', encoding='utf-8') as metrics_file:
+    fcntl.flock(metrics_file.fileno(), fcntl.LOCK_EX)
+    try:
+      metrics_file.seek(0)
+      metrics_file.truncate()
+      metrics_file.flush()
+      os.fsync(metrics_file.fileno())
+    finally:
+      fcntl.flock(metrics_file.fileno(), fcntl.LOCK_UN)
 
 
 def _safe_metrics_payload() -> Dict[str, Any]:
-    selected_model = _load_selected_model()
-    return {
-        'batches': [],
-        'status': 'waiting',
-        'model': None,
-        'selected_model': selected_model,
-        'active_model': selected_model,
-        'model_info': _model_info(selected_model),
-        'batch_size': None,
-        'start_time': None,
-        'total_expected_batches': None,
-        'total_batches': 0,
-        'avg_compute_time': None,
-        'min_compute_time': None,
-        'max_compute_time': None,
-        'throughput': None,
-        'eta_seconds': None
-    }
+  selected_model = _load_selected_model()
+  selected_gpu = _load_selected_gpu()
+  profiles = _scan_gpu_profiles()
+  return {
+    'batches': [],
+    'status': 'waiting',
+    'model': None,
+    'selected_model': selected_model,
+    'active_model': selected_model,
+    'model_info': _model_info(selected_model),
+    'selected_gpu': selected_gpu,
+    'gpu_info': _gpu_info(selected_gpu),
+    'available_gpus': sorted(profiles['gpus'].keys()),
+    'available_models': profiles['models'],
+    'batch_size': None,
+    'start_time': None,
+    'total_expected_batches': None,
+    'total_batches': 0,
+    'avg_compute_time': None,
+    'min_compute_time': None,
+    'max_compute_time': None,
+    'throughput': None,
+    'eta_seconds': None
+  }
 
 
 def _load_metrics_file() -> Dict[str, Any]:
-    if not os.path.exists(METRICS_PATH):
-        return _safe_metrics_payload()
+  if not os.path.exists(METRICS_PATH):
+    return _safe_metrics_payload()
 
-    try:
-        with open(METRICS_PATH, 'r', encoding='utf-8') as metrics_file:
-            raw = metrics_file.read().strip()
-            if not raw:
-                return _safe_metrics_payload()
-            data = json.loads(raw)
-            if not isinstance(data, dict):
-                return _safe_metrics_payload()
-            return data
-    except (OSError, json.JSONDecodeError):
+  try:
+    with open(METRICS_PATH, 'r', encoding='utf-8') as metrics_file:
+      raw = metrics_file.read().strip()
+      if not raw:
         return _safe_metrics_payload()
+      data = json.loads(raw)
+      if not isinstance(data, dict):
+        return _safe_metrics_payload()
+      return data
+  except (OSError, json.JSONDecodeError):
+    return _safe_metrics_payload()
 
 
 def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
-    enriched = _safe_metrics_payload()
-    enriched.update(data)
+  enriched = _safe_metrics_payload()
+  enriched.update(data)
 
-    selected_model = _normalize_model(enriched.get('selected_model'))
-    run_model_raw = enriched.get('model')
-    run_model = _normalize_model(run_model_raw) if run_model_raw else None
-    active_model = run_model or selected_model
+  selected_model = _normalize_model(enriched.get('selected_model'))
+  run_model_raw = enriched.get('model')
+  run_model = _normalize_model(run_model_raw) if run_model_raw else None
+  active_model = run_model or selected_model
 
-    enriched['selected_model'] = selected_model
-    enriched['active_model'] = active_model
-    enriched['model'] = active_model
-    enriched['model_info'] = _model_info(active_model)
+  enriched['selected_model'] = selected_model
+  enriched['active_model'] = active_model
+  enriched['model'] = active_model
+  enriched['model_info'] = _model_info(active_model)
 
-    batches: List[Dict[str, Any]] = enriched.get('batches', [])
-    if not isinstance(batches, list):
-        batches = []
-    enriched['batches'] = batches
+  selected_gpu = _normalize_gpu(enriched.get('selected_gpu'))
+  enriched['selected_gpu'] = selected_gpu
+  enriched['gpu_info'] = _gpu_info(selected_gpu)
 
-    times = [
-        float(item.get('compute_time'))
-        for item in batches
-        if isinstance(item, dict) and item.get('compute_time') is not None
-    ]
-    total_batches = len(times)
-    enriched['total_batches'] = total_batches
+  batches: List[Dict[str, Any]] = enriched.get('batches', [])
+  if not isinstance(batches, list):
+    batches = []
+  enriched['batches'] = batches
 
-    if total_batches == 0:
-        if enriched.get('status') not in ('running', 'completed'):
-            enriched['status'] = 'waiting'
-        return enriched
+  times = [
+    float(item.get('compute_time'))
+    for item in batches
+    if isinstance(item, dict) and item.get('compute_time') is not None
+  ]
+  total_batches = len(times)
+  enriched['total_batches'] = total_batches
 
-    avg_time = sum(times) / total_batches
-    min_time = min(times)
-    max_time = max(times)
-
-    start_time = enriched.get('start_time')
-    elapsed = None
-    if start_time is not None:
-        try:
-            elapsed = max(0.0, time.time() - float(start_time))
-        except (TypeError, ValueError):
-            elapsed = None
-
-    throughput = None
-    if elapsed and elapsed > 0:
-        throughput = total_batches / elapsed
-
-    eta_seconds = None
-    expected = enriched.get('total_expected_batches')
-    try:
-        if expected is not None and throughput and throughput > 0:
-            remaining = max(0, int(expected) - total_batches)
-            eta_seconds = remaining / throughput
-    except (TypeError, ValueError):
-        eta_seconds = None
-
-    enriched['avg_compute_time'] = avg_time
-    enriched['min_compute_time'] = min_time
-    enriched['max_compute_time'] = max_time
-    enriched['throughput'] = throughput
-    enriched['eta_seconds'] = eta_seconds
-
+  if total_batches == 0:
     if enriched.get('status') not in ('running', 'completed'):
-        enriched['status'] = 'running'
-
+      enriched['status'] = 'waiting'
     return enriched
+
+  avg_time = sum(times) / total_batches
+  min_time = min(times)
+  max_time = max(times)
+
+  start_time = enriched.get('start_time')
+  elapsed = None
+  if start_time is not None:
+    try:
+      elapsed = max(0.0, time.time() - float(start_time))
+    except (TypeError, ValueError):
+      elapsed = None
+
+  throughput = None
+  if elapsed and elapsed > 0:
+    throughput = total_batches / elapsed
+
+  eta_seconds = None
+  expected = enriched.get('total_expected_batches')
+  try:
+    if expected is not None and throughput and throughput > 0:
+      remaining = max(0, int(expected) - total_batches)
+      eta_seconds = remaining / throughput
+  except (TypeError, ValueError):
+    eta_seconds = None
+
+  enriched['avg_compute_time'] = avg_time
+  enriched['min_compute_time'] = min_time
+  enriched['max_compute_time'] = max_time
+  enriched['throughput'] = throughput
+  enriched['eta_seconds'] = eta_seconds
+
+  if enriched.get('status') not in ('running', 'completed'):
+    enriched['status'] = 'running'
+
+  return enriched
 
 
 @app.route('/')
 def dashboard() -> str:
-    return render_template_string(DASHBOARD_HTML)
+  return render_template_string(DASHBOARD_HTML)
 
 
 @app.route('/api/metrics')
 def api_metrics():
-    data = _load_metrics_file()
-    return jsonify(_enrich_metrics(data))
+  data = _load_metrics_file()
+  return jsonify(_enrich_metrics(data))
 
 
 @app.route('/api/set_model', methods=['POST'])
 def api_set_model():
-    payload = request.get_json(silent=True) or {}
-    selected = _save_selected_model(payload.get('model', DEFAULT_MODEL))
-    return jsonify({
-        'ok': True,
-        'selected_model': selected,
-        'model_info': _model_info(selected)
-    })
+  payload = request.get_json(silent=True) or {}
+  selected = _save_selected_model(payload.get('model', DEFAULT_MODEL))
+  return jsonify({
+    'ok': True,
+    'selected_model': selected,
+    'model_info': _model_info(selected)
+  })
+
+
+@app.route('/api/set_gpu', methods=['POST'])
+def api_set_gpu():
+  payload = request.get_json(silent=True) or {}
+  selected_gpu = _save_selected_gpu(payload.get('gpu', DEFAULT_GPU))
+  return jsonify({
+    'ok': True,
+    'selected_gpu': selected_gpu,
+    'gpu_info': _gpu_info(selected_gpu)
+  })
 
 
 @app.route('/api/start_new_run', methods=['POST'])
 def api_start_new_run():
-    _clear_metrics_file()
-    selected = _load_selected_model()
-    return jsonify({
-        'ok': True,
-        'status': 'waiting',
-        'selected_model': selected,
-        'model_info': _model_info(selected)
-    })
+  _clear_metrics_file()
+  selected = _load_selected_model()
+  selected_gpu = _load_selected_gpu()
+  return jsonify({
+    'ok': True,
+    'status': 'waiting',
+    'selected_model': selected,
+    'model_info': _model_info(selected),
+    'selected_gpu': selected_gpu,
+    'gpu_info': _gpu_info(selected_gpu)
+  })
 
 
 if __name__ == '__main__':
-    _save_selected_model(_load_selected_model())
-    app.run(host='0.0.0.0', port=5000, debug=False)
+  _save_selected_model(_load_selected_model())
+  _save_selected_gpu(_load_selected_gpu())
+  app.run(host='0.0.0.0', port=5000, debug=False)
