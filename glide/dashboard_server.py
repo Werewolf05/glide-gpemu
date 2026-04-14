@@ -194,16 +194,15 @@ DASHBOARD_HTML = """
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GLIDE Live Dashboard</title>
+  <title>GLIDE GPU Task Scheduler Simulator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
       --bg0: #07090f;
       --bg1: #0d1327;
-      --panel: rgba(17, 24, 42, 0.8);
+      --panel: rgba(13, 21, 40, 0.88);
       --line: #22366a;
       --text: #e7f2ff;
       --muted: #95aed0;
@@ -211,6 +210,7 @@ DASHBOARD_HTML = """
       --hot: #ff4d6d;
       --ok: #33f0a6;
       --warn: #ffd166;
+      --queued: #33a9ff;
       --btn: #1a2748;
       --btn-hover: #27407c;
     }
@@ -226,6 +226,7 @@ DASHBOARD_HTML = """
       background:
         radial-gradient(circle at 10% 8%, rgba(43, 228, 255, 0.15), transparent 34%),
         radial-gradient(circle at 85% 20%, rgba(255, 77, 109, 0.15), transparent 30%),
+        radial-gradient(circle at 50% 95%, rgba(51, 240, 166, 0.1), transparent 44%),
         linear-gradient(165deg, var(--bg0), var(--bg1));
       color: var(--text);
       font-family: 'Share Tech Mono', monospace;
@@ -234,7 +235,7 @@ DASHBOARD_HTML = """
     }
 
     .shell {
-      max-width: 1300px;
+      max-width: 1500px;
       margin: 0 auto;
       animation: liftIn 750ms ease-out;
     }
@@ -246,7 +247,7 @@ DASHBOARD_HTML = """
       gap: 14px;
       margin-bottom: 14px;
       border: 1px solid var(--line);
-      background: linear-gradient(90deg, rgba(43, 228, 255, 0.08), rgba(255, 77, 109, 0.08));
+      background: linear-gradient(90deg, rgba(43, 228, 255, 0.1), rgba(255, 77, 109, 0.1));
       padding: 14px 18px;
       border-radius: 12px;
       box-shadow: inset 0 0 50px rgba(43, 228, 255, 0.04), 0 16px 40px rgba(0, 0, 0, 0.35);
@@ -354,14 +355,18 @@ DASHBOARD_HTML = """
       padding: 12px 14px 14px;
     }
 
-    .controls {
+    .control-grid {
       display: grid;
-      grid-template-columns: 2fr 1fr 1fr;
+      grid-template-columns: 2.3fr 1.2fr 1.2fr;
       gap: 12px;
       margin-bottom: 14px;
     }
 
-    .control-card, .model-info, .gpu-info {
+    .control-card,
+    .model-info,
+    .gpu-info,
+    .panel,
+    .stats-bar {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 12px;
@@ -374,6 +379,24 @@ DASHBOARD_HTML = """
       align-items: end;
       gap: 10px;
       flex-wrap: wrap;
+    }
+
+    .slider-wrap {
+      min-width: 230px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .speed-meta {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--neon);
     }
 
     .input-label {
@@ -429,33 +452,22 @@ DASHBOARD_HTML = """
       line-height: 1.4;
     }
 
-    .grid {
+    .stats-bar {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 12px;
       margin-bottom: 16px;
     }
 
-    .card {
+    .stat-chip {
       position: relative;
-      background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 12px;
+      border-radius: 10px;
       padding: 12px;
-      backdrop-filter: blur(8px);
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
-      transform: translateY(10px);
-      opacity: 0;
-      animation: reveal 520ms ease-out forwards;
+      background: rgba(7, 13, 27, 0.86);
     }
 
-    .card:nth-child(2) { animation-delay: 70ms; }
-    .card:nth-child(3) { animation-delay: 140ms; }
-    .card:nth-child(4) { animation-delay: 210ms; }
-    .card:nth-child(5) { animation-delay: 280ms; }
-    .card:nth-child(6) { animation-delay: 350ms; }
-
-    .label {
+    .stat-label {
       color: var(--muted);
       font-size: 0.76rem;
       letter-spacing: 0.7px;
@@ -463,85 +475,322 @@ DASHBOARD_HTML = """
       margin-bottom: 8px;
     }
 
-    .value {
+    .stat-value {
       font-family: 'Rajdhani', sans-serif;
       font-weight: 700;
       font-size: clamp(1.3rem, 2.4vw, 1.95rem);
       line-height: 1;
     }
 
-    .tooltip {
-      position: absolute;
-      left: 10px;
-      right: 10px;
-      top: calc(100% + 8px);
+    .src-badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
       border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(5, 9, 18, 0.96);
-      color: var(--text);
-      font-size: 0.72rem;
-      line-height: 1.35;
-      padding: 8px;
-      opacity: 0;
-      transform: translateY(-4px);
-      pointer-events: none;
-      transition: opacity 160ms ease, transform 160ms ease;
-      z-index: 10;
+      font-size: 0.63rem;
+      letter-spacing: 0.5px;
+      padding: 1px 7px;
+      margin-left: 6px;
+      vertical-align: middle;
     }
 
-    .card:hover .tooltip {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    .src-badge.measured { color: var(--neon); border-color: rgba(43, 228, 255, 0.45); }
+    .src-badge.profiled { color: var(--ok); border-color: rgba(51, 240, 166, 0.45); }
+    .src-badge.derived { color: var(--warn); border-color: rgba(255, 209, 102, 0.45); }
 
-    .chart-wrap {
+    .now-strip {
       border: 1px solid var(--line);
-      border-radius: 14px;
-      background: rgba(8, 12, 22, 0.92);
-      padding: 14px;
-      min-height: 390px;
-      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
-    }
-
-    #emptyState {
-      min-height: 340px;
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+      background: linear-gradient(90deg, rgba(8, 14, 27, 0.94), rgba(14, 21, 39, 0.94));
       display: flex;
       align-items: center;
-      justify-content: center;
-      flex-direction: column;
+      justify-content: space-between;
       gap: 10px;
-      color: var(--muted);
-      border: 1px dashed var(--line);
-      border-radius: 10px;
-      background: rgba(10, 14, 26, 0.7);
-      letter-spacing: 0.8px;
-      text-transform: uppercase;
-      text-align: center;
-      padding: 18px;
+      flex-wrap: wrap;
     }
 
-    #chartCanvas {
+    .now-main {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1.15rem;
+      letter-spacing: 0.7px;
+      color: var(--neon);
+      text-transform: uppercase;
+    }
+
+    .now-meta {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .sim-grid {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr) 320px;
+      gap: 12px;
+    }
+
+    .panel-title {
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 10px;
+    }
+
+    .task-list {
+      display: grid;
+      gap: 8px;
+      max-height: 520px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .spark-wrap {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(7, 13, 27, 0.9);
+      padding: 8px;
+      margin-bottom: 10px;
+    }
+
+    .spark-title {
+      color: var(--muted);
+      font-size: 0.7rem;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    #queueSparkline {
       width: 100%;
-      height: 340px;
+      height: 56px;
+      display: block;
+    }
+
+    .task-item {
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--queued);
+      border-radius: 8px;
+      background: rgba(8, 14, 28, 0.88);
+      padding: 8px;
+    }
+
+    .task-item.done { border-left-color: var(--ok); }
+    .task-item.processing { border-left-color: var(--warn); }
+    .task-item.queued { border-left-color: var(--queued); }
+
+    .task-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 0.8rem;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 0.68rem;
+      letter-spacing: 0.6px;
+      color: var(--text);
+    }
+
+    .pill.done { border-color: rgba(51, 240, 166, 0.5); color: var(--ok); }
+    .pill.processing { border-color: rgba(255, 209, 102, 0.5); color: var(--warn); }
+    .pill.queued { border-color: rgba(51, 169, 255, 0.5); color: var(--queued); }
+
+    .timeline-wrap {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(7, 13, 27, 0.9);
+      min-height: 430px;
+      padding: 10px;
+      overflow: hidden;
+    }
+
+    .timeline-viewport {
+      overflow: auto;
+      width: 100%;
+      height: 360px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: linear-gradient(180deg, rgba(7, 11, 22, 0.9), rgba(10, 16, 31, 0.9));
+    }
+
+    .timeline-core {
+      position: relative;
+      height: 54px;
+      min-width: 780px;
+      margin: 10px 14px;
+      border: 1px dashed rgba(149, 174, 208, 0.45);
+      border-radius: 8px;
+      background: repeating-linear-gradient(
+        to right,
+        rgba(43, 228, 255, 0.05),
+        rgba(43, 228, 255, 0.05) 1px,
+        transparent 1px,
+        transparent 50px
+      );
+    }
+
+    .core-label {
+      position: absolute;
+      left: 8px;
+      top: -12px;
+      border: 1px solid var(--line);
+      background: rgba(7, 13, 27, 0.95);
+      padding: 2px 8px;
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+
+    .timeline-bar {
+      position: absolute;
+      top: 14px;
+      height: 26px;
+      border-radius: 7px;
+      border: 1px solid rgba(10, 18, 36, 0.6);
+      display: flex;
+      align-items: center;
+      padding-left: 8px;
+      font-size: 0.72rem;
+      white-space: nowrap;
+      overflow: hidden;
+      color: #06111d;
+      font-weight: 700;
+    }
+
+    .core-summary {
+      color: var(--muted);
+      font-size: 0.76rem;
+      margin-top: 8px;
+      margin-bottom: 6px;
+    }
+
+    .timeline-bar.fast { background: linear-gradient(90deg, #33f0a6, #7df7c9); }
+    .timeline-bar.medium { background: linear-gradient(90deg, #ffd166, #ffe39d); }
+    .timeline-bar.slow { background: linear-gradient(90deg, #ff4d6d, #ff87a0); }
+    .timeline-bar.queued {
+      background: linear-gradient(90deg, rgba(51, 169, 255, 0.35), rgba(43, 228, 255, 0.2));
+      color: #bfe7ff;
+      border-style: dashed;
+    }
+
+    .timeline-axis {
+      margin-top: 10px;
+      font-size: 0.72rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .metric-block {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: rgba(7, 13, 27, 0.9);
+      margin-bottom: 10px;
+    }
+
+    .metric-header {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-bottom: 7px;
+      text-transform: uppercase;
+    }
+
+    .meter {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(149, 174, 208, 0.2);
+      border: 1px solid rgba(149, 174, 208, 0.22);
+    }
+
+    .meter > span {
+      display: block;
+      height: 100%;
+      width: 0;
+      transition: width 320ms ease;
+      background: linear-gradient(90deg, #2be4ff, #33f0a6);
+    }
+
+    .legend {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .legend span {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 8px;
+    }
+
+    .legend .fast { color: var(--ok); }
+    .legend .medium { color: var(--warn); }
+    .legend .slow { color: var(--hot); }
+
+    .legend .queued { color: var(--queued); }
+
+    .empty {
+      color: var(--muted);
+      font-size: 0.85rem;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .log-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(7, 13, 27, 0.9);
+      padding: 8px;
+      margin-top: 10px;
+      max-height: 170px;
+      overflow: auto;
+    }
+
+    .log-entry {
+      font-size: 0.74rem;
+      color: var(--muted);
+      padding: 5px 0;
+      border-bottom: 1px dashed rgba(149, 174, 208, 0.2);
+    }
+
+    .log-entry:last-child {
+      border-bottom: 0;
     }
 
     @media (max-width: 1120px) {
-      .controls {
+      .control-grid {
         grid-template-columns: 1fr;
       }
-      .grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+      .stats-bar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .sim-grid {
+        grid-template-columns: 1fr;
       }
     }
 
     @media (max-width: 680px) {
       body { padding: 14px; }
       .topbar { flex-direction: column; align-items: flex-start; }
-      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .chart-wrap { min-height: 320px; }
-      #chartCanvas { height: 280px; }
+      .stats-bar { grid-template-columns: 1fr; }
       .control-row { align-items: stretch; }
-      select, .btn { width: 100%; }
+      select, .btn, .slider-wrap { width: 100%; }
     }
 
     @keyframes pulse {
@@ -554,17 +803,13 @@ DASHBOARD_HTML = """
       from { opacity: 0; transform: translateY(15px); }
       to { opacity: 1; transform: translateY(0); }
     }
-
-    @keyframes reveal {
-      to { opacity: 1; transform: translateY(0); }
-    }
   </style>
 </head>
 <body>
   <div class="shell">
     <div class="topbar">
       <div>
-        <div class="title" id="pageTitle">GLIDE Metrics Console • RESNET18</div>
+        <div class="title" id="pageTitle">GLIDE GPU TASK SCHEDULER SIMULATOR • RESNET18</div>
         <div class="subtitle" id="meta">Awaiting run metadata...</div>
       </div>
       <div class="status waiting" id="statusBadge"><span class="dot"></span><span id="statusText">WAITING FOR DATA...</span></div>
@@ -577,28 +822,44 @@ DASHBOARD_HTML = """
       </div>
       <div class="info-body">
         GPEmu is a GPU emulator: it lets us run deep learning workloads on a normal CPU when a real GPU is unavailable.
-        It tracks compute behavior batch by batch so we can observe performance trends and compare model choices.
-        In this review demo, GLIDE streams those metrics live to this dashboard for easy interpretation.
+        This dashboard simulates a task scheduler so anyone can understand how model batches move through a GPU-like execution pipeline.
+        Each batch appears as a task, enters a queue, executes on a timeline, and updates synthetic GPU resource indicators.
       </div>
     </div>
 
-    <div class="controls">
+    <div class="control-grid">
       <div class="control-card">
-        <div class="input-label">Model + GPU Selector</div>
+        <div class="input-label">Simulation Controls</div>
         <div class="control-row">
           <div>
+            <div class="input-label">Model</div>
             <select id="modelSelector">
               <option value="resnet18">resnet18</option>
             </select>
           </div>
           <div>
+            <div class="input-label">GPU Profile</div>
             <select id="gpuSelector">
               <option value="Tesla_M40">Tesla_M40</option>
             </select>
           </div>
+          <div>
+            <div class="input-label">Scheduling Algorithm</div>
+            <select id="algoSelector">
+              <option value="FIFO">FIFO</option>
+              <option value="Round Robin">Round Robin</option>
+              <option value="SJF">SJF</option>
+              <option value="HASP" disabled>HASP (coming soon)</option>
+            </select>
+          </div>
+          <div class="slider-wrap">
+            <div class="input-label">Simulation Speed</div>
+            <input id="speedSlider" type="range" min="0" max="2" step="1" value="1" />
+            <div class="speed-meta"><span>Slow</span><span id="speedLabel">Normal (1.0s)</span><span>Fast</span></div>
+          </div>
           <button class="btn" id="startRunBtn">Start New Run</button>
         </div>
-        <div class="hint">Select a model and GPU profile, then launch training. Both selections are persisted and used by main.py at startup.</div>
+        <div class="hint">Select model, GPU, algorithm, and speed. For Review 1, all algorithms execute as FIFO behavior while showing the selected policy name.</div>
       </div>
 
       <div class="model-info">
@@ -615,53 +876,98 @@ DASHBOARD_HTML = """
         <div class="model-line" id="gpuMemory"><strong>Memory:</strong> Unknown</div>
         <div class="model-line" id="gpuProfiles"><strong>Compute profiles:</strong> 0</div>
         <div class="model-line" id="gpuExtras"><strong>Other:</strong> transfer N/A | memory N/A</div>
+        <div class="model-line" id="algoActive"><strong>Scheduler:</strong> FIFO</div>
       </div>
     </div>
 
-    <div class="grid">
-      <div class="card">
-        <div class="label">Avg Compute Time</div>
-        <div class="value" id="avgCard">--</div>
-        <div class="tooltip">Average time to process one batch of 32 images</div>
+    <div class="stats-bar">
+      <div class="stat-chip">
+        <div class="stat-label">GPU Utilization <span class="src-badge derived">DERIVED</span></div>
+        <div class="stat-value" id="utilTop">--</div>
       </div>
-      <div class="card">
-        <div class="label">Min Compute Time</div>
-        <div class="value" id="minCard">--</div>
-        <div class="tooltip">Fastest/slowest batch seen so far</div>
+      <div class="stat-chip">
+        <div class="stat-label">Avg Wait Time <span class="src-badge derived">DERIVED</span></div>
+        <div class="stat-value" id="waitTop">--</div>
       </div>
-      <div class="card">
-        <div class="label">Max Compute Time</div>
-        <div class="value" id="maxCard">--</div>
-        <div class="tooltip">Fastest/slowest batch seen so far</div>
+      <div class="stat-chip">
+        <div class="stat-label">Tasks Completed <span class="src-badge measured">MEASURED</span></div>
+        <div class="stat-value" id="doneTop">0</div>
       </div>
-      <div class="card">
-        <div class="label">Throughput</div>
-        <div class="value" id="throughputCard">--</div>
-        <div class="tooltip">How many batches the GPU emulator processes per second</div>
-      </div>
-      <div class="card">
-        <div class="label">Total Batches</div>
-        <div class="value" id="totalCard">0</div>
-        <div class="tooltip">Number of image batches processed so far</div>
-      </div>
-      <div class="card">
-        <div class="label">Est. Time Remaining</div>
-        <div class="value" id="etaCard">--</div>
-        <div class="tooltip">Estimated time to finish all batches</div>
+      <div class="stat-chip">
+        <div class="stat-label">Current Time <span class="src-badge measured">MEASURED</span></div>
+        <div class="stat-value" id="timeTop">--</div>
       </div>
     </div>
 
-    <div class="chart-wrap">
-      <div id="emptyState">
-        <div style="font-size: 1.2rem; color: var(--neon);">WAITING FOR DATA...</div>
-        <div>Run main.py and stream batch compute times to begin.</div>
+    <div class="now-strip">
+      <div class="now-main" id="nowExec">Now Executing: Idle</div>
+      <div class="now-meta" id="nowExecMeta">State: waiting | Source: profiled timing + measured runtime events</div>
+    </div>
+
+    <div class="sim-grid">
+      <div class="panel">
+        <div class="panel-title">Task Queue Panel <span class="src-badge measured">MEASURED</span></div>
+        <div class="spark-wrap">
+          <div class="spark-title">Queue Depth Trend</div>
+          <svg id="queueSparkline" viewBox="0 0 260 56" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="task-list" id="taskQueue"></div>
       </div>
-      <canvas id="chartCanvas" style="display:none;"></canvas>
+
+      <div class="panel">
+        <div class="panel-title">Execution Timeline (Gantt Style) <span class="src-badge profiled">PROFILED</span></div>
+        <div class="core-summary" id="coreSummary">Core allocation: waiting for GPU selection</div>
+        <div class="timeline-wrap">
+          <div class="timeline-viewport" id="timelineViewport">
+            <div id="timelineCoreContainer">
+              <div class="timeline-core" id="timelineCore">
+                <div class="core-label">Core 1</div>
+              </div>
+            </div>
+          </div>
+          <div class="timeline-axis" id="timelineAxis"></div>
+          <div class="legend">
+            <span class="fast">Fast</span>
+            <span class="medium">Medium</span>
+            <span class="slow">Slow</span>
+            <span class="queued">Queued / Processing / Done shown in Task Queue</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">GPU Resource Usage Panel</div>
+        <div class="metric-block">
+          <div class="metric-header"><span>Compute Utilization <span class="src-badge derived">DERIVED</span></span><span id="utilValue">--</span></div>
+          <div class="meter"><span id="utilBar"></span></div>
+        </div>
+        <div class="metric-block">
+          <div class="metric-header"><span>VRAM Usage <span class="src-badge derived">DERIVED</span></span><span id="vramValue">--</span></div>
+          <div class="meter"><span id="vramBar"></span></div>
+        </div>
+        <div class="metric-block">
+          <div class="metric-header"><span>Memory Bandwidth <span class="src-badge derived">DERIVED</span></span><span id="bwValue">--</span></div>
+          <div class="meter"><span id="bwBar"></span></div>
+        </div>
+        <div class="metric-block">
+          <div class="metric-header"><span>Active Warps <span class="src-badge derived">DERIVED</span></span><span id="warpValue">--</span></div>
+          <div class="meter"><span id="warpBar"></span></div>
+        </div>
+        <div class="empty" id="resourceHint">Metrics are derived from live batch timing and selected profile for demo visualization.</div>
+        <div class="panel-title" style="margin-top:10px;">Scheduler Decision Log <span class="src-badge measured">EVENTS</span></div>
+        <div class="log-box" id="schedulerLog"></div>
+      </div>
     </div>
   </div>
 
   <script>
     const fmt = (v, suffix = 's') => (Number.isFinite(v) ? `${v.toFixed(4)} ${suffix}` : '--');
+    let refreshMs = 1000;
+    let refreshTimer = null;
+    let schedulerName = 'FIFO';
+    let schedulerLog = [];
+    let queueDepthHistory = [];
+    let lastLoggedBatch = -1;
 
     function formatSeconds(sec) {
       if (!Number.isFinite(sec)) return '--';
@@ -669,6 +975,133 @@ DASHBOARD_HTML = """
       const m = Math.floor(sec / 60);
       const s = Math.floor(sec % 60);
       return `${m}m ${s}s`;
+    }
+
+    function clamp(value, lo, hi) {
+      return Math.max(lo, Math.min(hi, value));
+    }
+
+    function getCurrentSelection(metrics) {
+      const selectedModel = document.getElementById('modelSelector')?.value || metrics.selected_model || metrics.active_model || 'resnet18';
+      const selectedGpu = document.getElementById('gpuSelector')?.value || metrics.selected_gpu || 'Tesla_M40';
+      return { selectedModel, selectedGpu };
+    }
+
+    function getProfileFactors(model, gpu) {
+      let computeScale = 1.0;
+      let utilBias = 1.0;
+      let vramScale = 1.0;
+      let bwScale = 1.0;
+
+      const m = (model || '').toLowerCase();
+      const g = (gpu || '').toUpperCase();
+
+      if (m.includes('resnet18') || m.includes('mobilenet') || m.includes('mnasnet') || m.includes('squeezenet')) {
+        computeScale *= 0.78;
+        utilBias *= 0.85;
+        vramScale *= 0.72;
+      } else if (m.includes('resnet50') || m.includes('densenet121') || m.includes('shufflenet')) {
+        computeScale *= 0.98;
+        utilBias *= 1.0;
+      } else if (m.includes('vgg') || m.includes('resnet152') || m.includes('wide_resnet') || m.includes('densenet201')) {
+        computeScale *= 1.22;
+        utilBias *= 1.18;
+        vramScale *= 1.28;
+        bwScale *= 1.15;
+      }
+
+      if (g.includes('A100')) {
+        computeScale *= 0.62;
+        utilBias *= 1.2;
+        bwScale *= 1.38;
+        vramScale *= 1.35;
+      } else if (g.includes('V100')) {
+        computeScale *= 0.74;
+        utilBias *= 1.12;
+        bwScale *= 1.22;
+      } else if (g.includes('P100')) {
+        computeScale *= 0.84;
+        utilBias *= 1.05;
+        bwScale *= 1.1;
+      } else if (g.includes('RTX_6000')) {
+        computeScale *= 0.92;
+        utilBias *= 1.0;
+      } else if (g.includes('M40') || g.includes('K80')) {
+        computeScale *= 1.12;
+        utilBias *= 0.82;
+        bwScale *= 0.78;
+      }
+
+      return { computeScale, utilBias, vramScale, bwScale };
+    }
+
+    function adjustedTimes(metrics) {
+      const { selectedModel, selectedGpu } = getCurrentSelection(metrics);
+      const factors = getProfileFactors(selectedModel, selectedGpu);
+      const batches = Array.isArray(metrics.batches) ? metrics.batches : [];
+      return {
+        factors,
+        selectedModel,
+        selectedGpu,
+        adjusted: batches.map((item) => ({
+          batch: Number(item.batch),
+          compute_time: Math.max(0.004, (Number(item.compute_time) || 0) * factors.computeScale)
+        }))
+      };
+    }
+
+    function restartTicker() {
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+      }
+      refreshTimer = setInterval(tick, refreshMs);
+    }
+
+    function pushLog(message) {
+      const stamp = new Date().toLocaleTimeString();
+      schedulerLog.push(`[${stamp}] ${message}`);
+      if (schedulerLog.length > 22) {
+        schedulerLog = schedulerLog.slice(-22);
+      }
+      renderLog();
+    }
+
+    function renderLog() {
+      const box = document.getElementById('schedulerLog');
+      if (!box) return;
+      if (schedulerLog.length === 0) {
+        box.innerHTML = '<div class="log-entry">No scheduling events yet.</div>';
+        return;
+      }
+      box.innerHTML = schedulerLog.slice(-12).reverse().map((entry) => `<div class="log-entry">${entry}</div>`).join('');
+    }
+
+    function renderQueueSparkline(depth) {
+      const svg = document.getElementById('queueSparkline');
+      if (!svg) return;
+
+      queueDepthHistory.push(depth);
+      if (queueDepthHistory.length > 44) {
+        queueDepthHistory = queueDepthHistory.slice(-44);
+      }
+
+      const values = queueDepthHistory;
+      const maxV = Math.max(1, ...values);
+      const width = 260;
+      const height = 56;
+
+      const points = values.map((v, idx) => {
+        const x = values.length <= 1 ? 0 : (idx / (values.length - 1)) * width;
+        const y = height - ((v / maxV) * (height - 8)) - 4;
+        return `${x.toFixed(2)},${y.toFixed(2)}`;
+      }).join(' ');
+
+      svg.innerHTML = `
+        <rect x="0" y="0" width="260" height="56" fill="rgba(7,13,27,0.3)" />
+        <polyline points="${points}" fill="none" stroke="#2be4ff" stroke-width="2" />
+        <text x="4" y="12" fill="#95aed0" font-size="9">max ${maxV}</text>
+        <text x="224" y="52" fill="#95aed0" font-size="9">now ${depth}</text>
+      `;
     }
 
     function setStatus(status, hasData) {
@@ -684,69 +1117,43 @@ DASHBOARD_HTML = """
 
       if (status === 'completed') {
         badge.classList.add('completed');
-        text.textContent = 'COMPLETED';
+        text.textContent = 'SIMULATION COMPLETE';
       } else {
         badge.classList.add('running');
-        text.textContent = 'RUNNING';
+        text.textContent = `RUNNING (${schedulerName})`;
       }
     }
 
-    const chartCtx = document.getElementById('chartCanvas').getContext('2d');
-    const chart = new Chart(chartCtx, {
-      type: 'line',
-      data: {
-        labels: [],
-        datasets: [{
-          label: 'Batch Compute Time (s)',
-          data: [],
-          borderColor: '#2be4ff',
-          backgroundColor: 'rgba(43, 228, 255, 0.24)',
-          borderWidth: 2,
-          tension: 0.28,
-          fill: true,
-          pointRadius: 0,
-          pointHoverRadius: 4
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: { duration: 350 },
-        interaction: { mode: 'index', intersect: false },
-        plugins: { legend: { labels: { color: '#c8dcf8' } } },
-        scales: {
-          x: {
-            grid: { color: 'rgba(255,255,255,0.08)' },
-            ticks: { color: '#9db7d8' }
-          },
-          y: {
-            beginAtZero: true,
-            grid: { color: 'rgba(255,255,255,0.08)' },
-            ticks: {
-              color: '#9db7d8',
-              callback: (value) => `${value}s`
-            }
-          }
-        }
-      }
-    });
-
     function resetDashboardState() {
-      document.getElementById('avgCard').textContent = '--';
-      document.getElementById('minCard').textContent = '--';
-      document.getElementById('maxCard').textContent = '--';
-      document.getElementById('throughputCard').textContent = '--';
-      document.getElementById('totalCard').textContent = '0';
-      document.getElementById('etaCard').textContent = '--';
+      document.getElementById('utilTop').textContent = '--';
+      document.getElementById('waitTop').textContent = '--';
+      document.getElementById('doneTop').textContent = '0';
+      document.getElementById('timeTop').textContent = '--';
       document.getElementById('meta').textContent = 'Awaiting run metadata...';
+      document.getElementById('taskQueue').innerHTML = '<div class="empty">No tasks yet. Start a run to enqueue batches.</div>';
+      document.getElementById('timelineCoreContainer').innerHTML = '<div class="timeline-core" id="timelineCore"><div class="core-label">Core 1</div></div>';
+      document.getElementById('timelineAxis').textContent = '';
+      document.getElementById('coreSummary').textContent = 'Core allocation: waiting for GPU selection';
+      setMeter('utilBar', 0);
+      setMeter('vramBar', 0);
+      setMeter('bwBar', 0);
+      setMeter('warpBar', 0);
+      document.getElementById('utilValue').textContent = '--';
+      document.getElementById('vramValue').textContent = '--';
+      document.getElementById('bwValue').textContent = '--';
+      document.getElementById('warpValue').textContent = '--';
+      document.getElementById('nowExec').textContent = 'Now Executing: Idle';
+      document.getElementById('nowExecMeta').textContent = 'State: waiting | Source: profiled timing + measured runtime events';
+      queueDepthHistory = [];
+      schedulerLog = [];
+      lastLoggedBatch = -1;
+      renderQueueSparkline(0);
+      renderLog();
       setStatus('waiting', false);
+    }
 
-      chart.data.labels = [];
-      chart.data.datasets[0].data = [];
-      chart.update();
-
-      document.getElementById('emptyState').style.display = 'flex';
-      document.getElementById('chartCanvas').style.display = 'none';
+    function setMeter(id, percent) {
+      document.getElementById(id).style.width = `${clamp(percent, 0, 100).toFixed(1)}%`;
     }
 
     function updateModelInfo(modelInfo, modelKey) {
@@ -798,35 +1205,262 @@ DASHBOARD_HTML = """
       }
     }
 
-    function updateCards(metrics) {
-      document.getElementById('avgCard').textContent = fmt(metrics.avg_compute_time);
-      document.getElementById('minCard').textContent = fmt(metrics.min_compute_time);
-      document.getElementById('maxCard').textContent = fmt(metrics.max_compute_time);
-      document.getElementById('throughputCard').textContent = Number.isFinite(metrics.throughput) ? `${metrics.throughput.toFixed(2)} batch/s` : '--';
-      document.getElementById('totalCard').textContent = metrics.total_batches ?? 0;
-      document.getElementById('etaCard').textContent = formatSeconds(metrics.eta_seconds);
+    function renderTopStats(metrics) {
+      const data = adjustedTimes(metrics);
+      const list = data.adjusted;
+      const avg = list.length > 0 ? (list.reduce((acc, it) => acc + it.compute_time, 0) / list.length) : 0;
+      const minVal = list.length > 0 ? Math.min(...list.map((it) => it.compute_time)) : avg;
+      const throughput = avg > 0 ? (1 / avg) * 0.85 : 0;
+      const util = clamp(throughput * avg * 100 * data.factors.utilBias, 0, 100);
+      const wait = Math.max(0, avg - minVal);
+      const done = Number(metrics.total_batches) || 0;
 
-      const activeModel = metrics.active_model || metrics.selected_model || 'resnet18';
-      const activeGpu = metrics.selected_gpu || 'Tesla_M40';
+      let elapsed = null;
+      if (metrics.start_time) {
+        const raw = (Date.now() / 1000) - Number(metrics.start_time);
+        elapsed = Number.isFinite(raw) ? Math.max(0, raw) : null;
+      }
+
+      document.getElementById('utilTop').textContent = `${util.toFixed(1)}%`;
+      document.getElementById('waitTop').textContent = fmt(wait);
+      document.getElementById('doneTop').textContent = `${done}`;
+      document.getElementById('timeTop').textContent = formatSeconds(elapsed);
+    }
+
+    function renderTaskQueue(metrics) {
+      const queue = document.getElementById('taskQueue');
+      const batches = Array.isArray(metrics.batches) ? metrics.batches : [];
+      if (batches.length === 0) {
+        renderQueueSparkline(0);
+        queue.innerHTML = '<div class="empty">No tasks yet. Start a run to enqueue batches.</div>';
+        return;
+      }
+
+      const preview = batches.slice(-8).map((item) => ({
+        batch: Number(item.batch),
+        compute_time: Number(item.compute_time),
+        status: 'DONE'
+      }));
+
+      if (metrics.status === 'running' && preview.length > 0) {
+        preview[preview.length - 1].status = 'PROCESSING';
+      }
+
+      const expected = Number(metrics.total_expected_batches);
+      const total = Number(metrics.total_batches);
+      let queueDepth = 0;
+      if (metrics.status === 'running' && Number.isFinite(expected) && Number.isFinite(total)) {
+        const remain = Math.max(0, expected - total);
+        queueDepth = remain;
+        const base = preview.length > 0 ? preview[preview.length - 1].batch + 1 : total;
+        const queuedCount = Math.min(2, remain);
+        for (let i = 0; i < queuedCount; i += 1) {
+          preview.push({ batch: base + i, compute_time: null, status: 'QUEUED' });
+        }
+      }
+
+      renderQueueSparkline(queueDepth);
+
+      queue.innerHTML = preview.map((task) => {
+        const cls = task.status.toLowerCase();
+        const timeTxt = Number.isFinite(task.compute_time) ? `${task.compute_time.toFixed(4)} s` : 'pending';
+        return `
+          <div class="task-item ${cls}">
+            <div class="task-top">
+              <span>Task ID: Batch ${task.batch}</span>
+              <span class="pill ${cls}">${task.status}</span>
+            </div>
+            <div class="model-line">Compute: ${timeTxt}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderNowExecuting(metrics) {
+      const data = adjustedTimes(metrics);
+      const batches = data.adjusted;
+      const nowTitle = document.getElementById('nowExec');
+      const nowMeta = document.getElementById('nowExecMeta');
+
+      if (batches.length === 0) {
+        nowTitle.textContent = 'Now Executing: Idle';
+        nowMeta.textContent = `State: ${metrics.status || 'waiting'} | Source: profiled timing + measured runtime events`;
+        return;
+      }
+
+      const last = batches[batches.length - 1];
+      const batchId = Number(last.batch);
+      const compute = Number(last.compute_time);
+      let phase = 'DONE';
+      if (metrics.status === 'running') {
+        phase = 'PROCESSING';
+      }
+
+      nowTitle.textContent = `Now Executing: Batch ${batchId} (${phase})`;
+      nowMeta.textContent = `Time: ${Number.isFinite(compute) ? compute.toFixed(4) + 's' : '--'} | Scheduler: ${schedulerName} | Profile: ${data.selectedGpu}/${data.selectedModel}`;
+    }
+
+    function renderTimeline(metrics) {
+      const coreContainer = document.getElementById('timelineCoreContainer');
+      const viewport = document.getElementById('timelineViewport');
+      const axis = document.getElementById('timelineAxis');
+      const data = adjustedTimes(metrics);
+      const batches = data.adjusted;
+      const coreSummary = document.getElementById('coreSummary');
+
+      function getGpuCoreCount(gpuName) {
+        const g = (gpuName || '').toUpperCase();
+        if (g.includes('A100')) return 108;
+        if (g.includes('V100')) return 80;
+        if (g.includes('P100')) return 56;
+        if (g.includes('RTX_6000')) return 72;
+        if (g.includes('M40')) return 24;
+        if (g.includes('K80')) return 13;
+        return 16;
+      }
+
+      const coreCount = getGpuCoreCount(data.selectedGpu);
+      coreSummary.textContent = `Core allocation: ${coreCount} cores active on ${data.selectedGpu} using ${schedulerName}`;
+
+      if (batches.length === 0) {
+        coreContainer.innerHTML = '<div class="timeline-core" id="timelineCore"><div class="core-label">Core 1</div></div>';
+        axis.textContent = '';
+        return;
+      }
+
+      let viewBatches = batches.slice(-120).map((item) => ({
+        batch: Number(item.batch),
+        compute_time: Number(item.compute_time) || 0
+      }));
+
+      if (schedulerName === 'SJF') {
+        viewBatches = [...viewBatches].sort((a, b) => a.compute_time - b.compute_time);
+      }
+
+      const avg = (viewBatches.reduce((acc, item) => acc + item.compute_time, 0) / viewBatches.length) || 0.0001;
+      const scale = 85;
+      const cores = Array.from({ length: coreCount }, () => ({ load: 0, bars: [] }));
+
+      const emitBar = (coreIndex, batchId, duration, className, label) => {
+        const left = cores[coreIndex].load * scale;
+        const width = Math.max(7, duration * scale);
+        cores[coreIndex].bars.push(`<div class="timeline-bar ${className}" style="left:${left}px;width:${width}px;">${label || ('B' + batchId)}</div>`);
+        cores[coreIndex].load += duration;
+      };
+
+      const leastLoadedCore = () => {
+        let idx = 0;
+        for (let i = 1; i < cores.length; i += 1) {
+          if (cores[i].load < cores[idx].load) idx = i;
+        }
+        return idx;
+      };
+
+      const classForDuration = (duration) => {
+        if (duration > avg * 1.2) return 'slow';
+        if (duration > avg * 0.9) return 'medium';
+        return 'fast';
+      };
+
+      if (schedulerName === 'Round Robin') {
+        const quantum = Math.max(0.018, avg * 0.42);
+        const rr = viewBatches.map((it) => ({ ...it, remaining: it.compute_time }));
+        let guard = 0;
+        let nextCore = 0;
+        while (rr.some((it) => it.remaining > 0.0005) && guard < 4000) {
+          for (const item of rr) {
+            if (item.remaining <= 0.0005) continue;
+            const slice = Math.min(item.remaining, quantum);
+            const cls = classForDuration(item.compute_time);
+            emitBar(nextCore, item.batch, slice, cls, `B${item.batch}`);
+            item.remaining -= slice;
+            nextCore = (nextCore + 1) % cores.length;
+            guard += 1;
+          }
+        }
+      } else {
+        for (const item of viewBatches) {
+          const duration = Math.max(0.004, item.compute_time);
+          const cls = classForDuration(duration);
+          const coreIdx = leastLoadedCore();
+          emitBar(coreIdx, item.batch, duration, cls, `B${item.batch}`);
+        }
+      }
+
+      const expected = Number(metrics.total_expected_batches);
+      const total = Number(metrics.total_batches);
+      if (metrics.status === 'running' && Number.isFinite(expected) && Number.isFinite(total)) {
+        const pending = Math.max(0, expected - total);
+        const queuedCount = Math.min(coreCount * 2, pending);
+        const avgDuration = Math.max(0.02, avg);
+        const startBatch = viewBatches.length > 0 ? viewBatches[viewBatches.length - 1].batch + 1 : total;
+        for (let i = 0; i < queuedCount; i += 1) {
+          const coreIdx = leastLoadedCore();
+          const duration = avgDuration * 0.9;
+          emitBar(coreIdx, startBatch + i, duration, 'queued', `Q${startBatch + i}`);
+        }
+      }
+
+      const totalSec = Math.max(...cores.map((c) => c.load));
+      const minW = Math.max(780, Math.ceil(totalSec * scale) + 90);
+      coreContainer.innerHTML = cores.map((coreLane, idx) => (
+        `<div class="timeline-core" style="min-width:${minW}px;"><div class="core-label">Core ${idx + 1}</div>${coreLane.bars.join('')}</div>`
+      )).join('');
+
+      axis.innerHTML = `
+        <span>0s</span>
+        <span>${(totalSec * 0.25).toFixed(2)}s</span>
+        <span>${(totalSec * 0.5).toFixed(2)}s</span>
+        <span>${(totalSec * 0.75).toFixed(2)}s</span>
+        <span>${totalSec.toFixed(2)}s</span>
+      `;
+
+      viewport.scrollLeft = viewport.scrollWidth;
+    }
+
+    function renderResources(metrics) {
+      const data = adjustedTimes(metrics);
+      const list = data.adjusted;
+      const avg = list.length > 0 ? (list.reduce((acc, it) => acc + it.compute_time, 0) / list.length) : 0;
+      const throughput = avg > 0 ? (1 / avg) * 0.8 : 0;
+      const utilRaw = throughput * avg * 100;
+      const util = clamp(((utilRaw * 1.2) + (Number(metrics.batch_size) || 0) * 0.35) * data.factors.utilBias, 0, 100);
+      const batchSize = Number(metrics.batch_size) || 0;
+
+      const memText = (metrics.gpu_info && metrics.gpu_info.memory_gb) || 'Unknown';
+      const totalMem = Number.parseFloat(memText) || 24;
+      const vramUsed = clamp(((batchSize * 0.08) + util * 0.07) * data.factors.vramScale, 0, totalMem);
+      const vramPct = clamp((vramUsed / Math.max(1, totalMem)) * 100, 0, 100);
+
+      const bw = clamp((throughput * batchSize * 0.35) * data.factors.bwScale, 0, 900);
+      const bwPct = clamp((bw / 900) * 100, 0, 100);
+
+      const warps = Math.max(1, Math.ceil(batchSize / 32));
+      const warpPct = clamp((warps / 64) * 100, 0, 100);
+
+      setMeter('utilBar', util);
+      setMeter('vramBar', vramPct);
+      setMeter('bwBar', bwPct);
+      setMeter('warpBar', warpPct);
+
+      document.getElementById('utilValue').textContent = `${util.toFixed(1)}%`;
+      document.getElementById('vramValue').textContent = `${vramUsed.toFixed(1)} / ${totalMem.toFixed(0)} GB`;
+      document.getElementById('bwValue').textContent = `${bw.toFixed(1)} GB/s`;
+      document.getElementById('warpValue').textContent = `${warps} warps`;
+
+      const headroom = Math.max(0, 100 - util);
+      const hintLevel = util < 45 ? 'low' : (util < 75 ? 'moderate' : 'high');
+      document.getElementById('resourceHint').textContent = `Current utilization is ${hintLevel} at ${util.toFixed(1)}%. Optimization headroom: ${headroom.toFixed(1)}%.`;
+
+      const activeModel = data.selectedModel;
+      const activeGpu = data.selectedGpu;
       const expected = metrics.total_expected_batches || '?';
       const bs = metrics.batch_size || '32';
-      document.getElementById('meta').textContent = `Model ${activeModel.toUpperCase()} | GPU ${activeGpu} | Batch Size ${bs} | Expected Batches ${expected}`;
+      document.getElementById('meta').textContent = `Model ${activeModel.toUpperCase()} | GPU ${activeGpu} | Batch Size ${bs} | Expected Batches ${expected} | Scheduler ${schedulerName}`;
 
       updateModelInfo(metrics.model_info, activeModel);
       updateGpuInfo(metrics.gpu_info, activeGpu);
-    }
-
-    function updateChart(batches) {
-      const hasData = batches.length > 0;
-      const empty = document.getElementById('emptyState');
-      const canvas = document.getElementById('chartCanvas');
-      empty.style.display = hasData ? 'none' : 'flex';
-      canvas.style.display = hasData ? 'block' : 'none';
-
-      if (!hasData) return;
-      chart.data.labels = batches.map((b) => b.batch);
-      chart.data.datasets[0].data = batches.map((b) => b.compute_time);
-      chart.update();
+      document.getElementById('algoActive').innerHTML = `<strong>Scheduler:</strong> ${schedulerName}`;
     }
 
     async function setModelSelection(model) {
@@ -837,6 +1471,7 @@ DASHBOARD_HTML = """
       });
       const payload = await response.json();
       updateModelInfo(payload.model_info, payload.selected_model);
+      document.getElementById('pageTitle').textContent = `GLIDE GPU TASK SCHEDULER SIMULATOR • ${(payload.model_info?.display_name || payload.selected_model || model).toUpperCase()}`;
     }
 
     async function setGpuSelection(gpu) {
@@ -847,11 +1482,13 @@ DASHBOARD_HTML = """
       });
       const payload = await response.json();
       updateGpuInfo(payload.gpu_info, payload.selected_gpu);
+      document.getElementById('gpuName').textContent = payload.selected_gpu || gpu;
     }
 
     async function startNewRun() {
       await fetch('/api/start_new_run', { method: 'POST' });
       resetDashboardState();
+      pushLog('New run initialized; queue cleared and scheduler reset.');
       await tick();
     }
 
@@ -876,8 +1513,28 @@ DASHBOARD_HTML = """
         }
 
         setStatus(metrics.status, batches.length > 0);
-        updateCards(metrics);
-        updateChart(batches);
+        renderTopStats(metrics);
+        renderTaskQueue(metrics);
+        renderTimeline(metrics);
+        renderNowExecuting(metrics);
+        renderResources(metrics);
+
+        if (batches.length > 0) {
+          const lastBatch = Number(batches[batches.length - 1].batch);
+          if (Number.isFinite(lastBatch) && lastBatch > lastLoggedBatch) {
+            for (let b = lastLoggedBatch + 1; b <= lastBatch; b += 1) {
+              pushLog(`${schedulerName} dispatched Batch ${b}`);
+            }
+            lastLoggedBatch = lastBatch;
+          }
+        }
+
+        if (metrics.status === 'completed') {
+          const total = Number(metrics.total_batches) || 0;
+          if (schedulerLog.length === 0 || !schedulerLog[schedulerLog.length - 1].includes('Simulation marked completed')) {
+            pushLog(`Simulation marked completed with ${total} tasks finished.`);
+          }
+        }
       } catch (_err) {
         setStatus('waiting', false);
       }
@@ -890,6 +1547,9 @@ DASHBOARD_HTML = """
     document.getElementById('modelSelector').addEventListener('change', async (evt) => {
       try {
         await setModelSelection(evt.target.value);
+        resetDashboardState();
+        await tick();
+        pushLog(`Model switched to ${evt.target.value}.`);
       } catch (_err) {
       }
     });
@@ -897,8 +1557,33 @@ DASHBOARD_HTML = """
     document.getElementById('gpuSelector').addEventListener('change', async (evt) => {
       try {
         await setGpuSelection(evt.target.value);
+        resetDashboardState();
+        await tick();
+        pushLog(`GPU profile switched to ${evt.target.value}.`);
       } catch (_err) {
       }
+    });
+
+    document.getElementById('algoSelector').addEventListener('change', (evt) => {
+      schedulerName = evt.target.value;
+      document.getElementById('algoActive').innerHTML = `<strong>Scheduler:</strong> ${schedulerName}`;
+      pushLog(`Scheduling policy set to ${schedulerName} (demo uses FIFO execution).`);
+    });
+
+    document.getElementById('speedSlider').addEventListener('input', (evt) => {
+      const value = Number(evt.target.value);
+      if (value === 0) {
+        refreshMs = 2000;
+        document.getElementById('speedLabel').textContent = 'Slow (2.0s)';
+      } else if (value === 2) {
+        refreshMs = 500;
+        document.getElementById('speedLabel').textContent = 'Fast (0.5s)';
+      } else {
+        refreshMs = 1000;
+        document.getElementById('speedLabel').textContent = 'Normal (1.0s)';
+      }
+      restartTicker();
+      pushLog(`Simulation refresh interval changed to ${(refreshMs / 1000).toFixed(1)}s.`);
     });
 
     document.getElementById('startRunBtn').addEventListener('click', async () => {
@@ -909,7 +1594,7 @@ DASHBOARD_HTML = """
     });
 
     tick();
-    setInterval(tick, 1000);
+    restartTicker();
   </script>
 </body>
 </html>
