@@ -1,4 +1,5 @@
 import fcntl
+import csv
 import json
 import os
 import time
@@ -109,6 +110,110 @@ def _scan_gpu_profiles() -> Dict[str, Any]:
     'root': root,
     'gpus': gpu_map,
     'models': sorted(model_set)
+  }
+
+
+def _read_csv_rows(path: str) -> List[Dict[str, str]]:
+  if not os.path.exists(path):
+    return []
+  try:
+    with open(path, 'r', encoding='utf-8') as csv_file:
+      reader = csv.DictReader(csv_file)
+      return [row for row in reader if isinstance(row, dict)]
+  except OSError:
+    return []
+
+
+def _to_float(value: Any) -> float:
+  try:
+    return float(value)
+  except (TypeError, ValueError):
+    return float('nan')
+
+
+def _value_at_batch(rows: List[Dict[str, str]], x_key: str, y_key: str, batch_size: int) -> float:
+  points: List[tuple] = []
+  for row in rows:
+    x = _to_float(row.get(x_key))
+    y = _to_float(row.get(y_key))
+    if x == x and y == y:
+      points.append((x, y))
+
+  if not points:
+    return float('nan')
+
+  points.sort(key=lambda item: item[0])
+  target = float(max(1, batch_size))
+
+  if target <= points[0][0]:
+    return points[0][1]
+  if target >= points[-1][0]:
+    return points[-1][1]
+
+  for idx in range(1, len(points)):
+    x1, y1 = points[idx - 1]
+    x2, y2 = points[idx]
+    if x1 <= target <= x2:
+      if x2 == x1:
+        return y1
+      ratio = (target - x1) / (x2 - x1)
+      return y1 + (y2 - y1) * ratio
+
+  return points[-1][1]
+
+
+def _get_profile_stats(gpu_name: str, model_name: str, batch_size: Any) -> Dict[str, Any]:
+  gpu = _normalize_gpu(gpu_name)
+  model = _normalize_model(model_name)
+  batch = int(batch_size) if str(batch_size).isdigit() else 32
+  root = _resolve_profiled_data_root()
+
+  memory_csv = os.path.join(root, 'memory', gpu, model, 'memory.csv')
+  forward_csv = os.path.join(root, 'time', 'compute', 'forward', gpu, model, 'time_by_batch_size.csv')
+  backward_csv = os.path.join(root, 'time', 'compute', 'backward', gpu, model, 'time_by_batch_size.csv')
+  transfer_csv = os.path.join(root, 'time', 'transfer', gpu, model, 'data_transfer_time_by_batch_size.csv')
+  model_transfer_txt = os.path.join(root, 'time', 'transfer', gpu, model, 'model_transfer_time.txt')
+
+  mem_rows = _read_csv_rows(memory_csv)
+  forward_rows = _read_csv_rows(forward_csv)
+  backward_rows = _read_csv_rows(backward_csv)
+  transfer_rows = _read_csv_rows(transfer_csv)
+
+  peak_mb = _value_at_batch(mem_rows, 'batch_size', 'peak', batch)
+  persistent_mb = _value_at_batch(mem_rows, 'batch_size', 'persistent', batch)
+  forward_s = _value_at_batch(forward_rows, 'Batch_Size', 'Time_In_SECONDS', batch)
+  backward_s = _value_at_batch(backward_rows, 'Batch_Size', 'Time_In_SECONDS', batch)
+  transfer_s = _value_at_batch(transfer_rows, 'Batch_Size', 'Time_In_SECONDS', batch)
+
+  model_transfer_s = float('nan')
+  if os.path.exists(model_transfer_txt):
+    try:
+      with open(model_transfer_txt, 'r', encoding='utf-8') as model_transfer_file:
+        model_transfer_s = _to_float(model_transfer_file.read().strip())
+    except OSError:
+      model_transfer_s = float('nan')
+
+  # Assume ImageNet-style float32 input tensor (B,3,224,224).
+  input_bytes = max(1, batch) * 3 * 224 * 224 * 4
+  bandwidth_gbps = float('nan')
+  if transfer_s == transfer_s and transfer_s > 0:
+    bandwidth_gbps = input_bytes / transfer_s / 1_000_000_000
+
+  return {
+    'gpu': gpu,
+    'model': model,
+    'batch_size': batch,
+    'memory_peak_gb': (peak_mb / 1024.0) if peak_mb == peak_mb else None,
+    'memory_persistent_gb': (persistent_mb / 1024.0) if persistent_mb == persistent_mb else None,
+    'forward_time_s': forward_s if forward_s == forward_s else None,
+    'backward_time_s': backward_s if backward_s == backward_s else None,
+    'transfer_time_s': transfer_s if transfer_s == transfer_s else None,
+    'model_transfer_time_s': model_transfer_s if model_transfer_s == model_transfer_s else None,
+    'compute_time_s': (forward_s + backward_s) if (forward_s == forward_s and backward_s == backward_s) else None,
+    'estimated_bandwidth_gbps': bandwidth_gbps if bandwidth_gbps == bandwidth_gbps else None,
+    'has_memory_profile': bool(mem_rows),
+    'has_compute_profile': bool(forward_rows and backward_rows),
+    'has_transfer_profile': bool(transfer_rows)
   }
 
 
@@ -385,6 +490,30 @@ DASHBOARD_HTML = """
       min-width: 230px;
       display: grid;
       gap: 4px;
+    }
+
+    .mode-badge {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: rgba(9, 14, 27, 0.95);
+      color: var(--ok);
+      font-size: 0.82rem;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      min-width: 230px;
+    }
+
+    .static-label {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: rgba(9, 14, 27, 0.95);
+      color: var(--muted);
+      font-size: 0.82rem;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      min-width: 170px;
     }
 
     .speed-meta {
@@ -769,6 +898,18 @@ DASHBOARD_HTML = """
       border-bottom: 1px dashed rgba(149, 174, 208, 0.2);
     }
 
+    .log-entry.fast {
+      color: var(--ok);
+    }
+
+    .log-entry.medium {
+      color: var(--warn);
+    }
+
+    .log-entry.slow {
+      color: var(--hot);
+    }
+
     .log-entry:last-child {
       border-bottom: 0;
     }
@@ -844,22 +985,16 @@ DASHBOARD_HTML = """
             </select>
           </div>
           <div>
-            <div class="input-label">Scheduling Algorithm</div>
-            <select id="algoSelector">
-              <option value="FIFO">FIFO</option>
-              <option value="Round Robin">Round Robin</option>
-              <option value="SJF">SJF</option>
-              <option value="HASP" disabled>HASP (coming soon)</option>
-            </select>
+            <div class="input-label">Current Mode</div>
+            <div class="mode-badge" id="modeBadge">SEQUENTIAL BATCH EXECUTION</div>
           </div>
-          <div class="slider-wrap">
-            <div class="input-label">Simulation Speed</div>
-            <input id="speedSlider" type="range" min="0" max="2" step="1" value="1" />
-            <div class="speed-meta"><span>Slow</span><span id="speedLabel">Normal (1.0s)</span><span>Fast</span></div>
+          <div>
+            <div class="input-label">Refresh</div>
+            <div class="static-label">REFRESH RATE: 1s</div>
           </div>
           <button class="btn" id="startRunBtn">Start New Run</button>
         </div>
-        <div class="hint">Select model, GPU, algorithm, and speed. For Review 1, all algorithms execute as FIFO behavior while showing the selected policy name.</div>
+        <div class="hint">Select model and GPU for real GPEmu-backed metrics. HASP Scheduler -- Coming in Review 2.</div>
       </div>
 
       <div class="model-info">
@@ -876,7 +1011,7 @@ DASHBOARD_HTML = """
         <div class="model-line" id="gpuMemory"><strong>Memory:</strong> Unknown</div>
         <div class="model-line" id="gpuProfiles"><strong>Compute profiles:</strong> 0</div>
         <div class="model-line" id="gpuExtras"><strong>Other:</strong> transfer N/A | memory N/A</div>
-        <div class="model-line" id="algoActive"><strong>Scheduler:</strong> FIFO</div>
+        <div class="model-line" id="algoActive"><strong>Current mode:</strong> sequential batch execution</div>
       </div>
     </div>
 
@@ -886,16 +1021,28 @@ DASHBOARD_HTML = """
         <div class="stat-value" id="utilTop">--</div>
       </div>
       <div class="stat-chip">
-        <div class="stat-label">Avg Wait Time <span class="src-badge derived">DERIVED</span></div>
-        <div class="stat-value" id="waitTop">--</div>
+        <div class="stat-label">Avg Compute <span class="src-badge measured">MEASURED</span></div>
+        <div class="stat-value" id="avgTop">--</div>
       </div>
       <div class="stat-chip">
-        <div class="stat-label">Tasks Completed <span class="src-badge measured">MEASURED</span></div>
+        <div class="stat-label">Min Compute <span class="src-badge measured">MEASURED</span></div>
+        <div class="stat-value" id="minTop">--</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">Max Compute <span class="src-badge measured">MEASURED</span></div>
+        <div class="stat-value" id="maxTop">--</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">Throughput <span class="src-badge measured">MEASURED</span></div>
+        <div class="stat-value" id="throughputTop">--</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">Total Batches <span class="src-badge measured">MEASURED</span></div>
         <div class="stat-value" id="doneTop">0</div>
       </div>
       <div class="stat-chip">
-        <div class="stat-label">Current Time <span class="src-badge measured">MEASURED</span></div>
-        <div class="stat-value" id="timeTop">--</div>
+        <div class="stat-label">ETA <span class="src-badge derived">DERIVED</span></div>
+        <div class="stat-value" id="etaTop">--</div>
       </div>
     </div>
 
@@ -927,10 +1074,9 @@ DASHBOARD_HTML = """
           </div>
           <div class="timeline-axis" id="timelineAxis"></div>
           <div class="legend">
-            <span class="fast">Fast</span>
-            <span class="medium">Medium</span>
-            <span class="slow">Slow</span>
-            <span class="queued">Queued / Processing / Done shown in Task Queue</span>
+            <span class="fast">Fast Batch</span>
+            <span class="medium">Average Batch</span>
+            <span class="slow">Slow Batch</span>
           </div>
         </div>
       </div>
@@ -942,11 +1088,11 @@ DASHBOARD_HTML = """
           <div class="meter"><span id="utilBar"></span></div>
         </div>
         <div class="metric-block">
-          <div class="metric-header"><span>VRAM Usage <span class="src-badge derived">DERIVED</span></span><span id="vramValue">--</span></div>
+          <div class="metric-header"><span>VRAM Usage <span class="src-badge profiled">PROFILED</span></span><span id="vramValue">--</span></div>
           <div class="meter"><span id="vramBar"></span></div>
         </div>
         <div class="metric-block">
-          <div class="metric-header"><span>Memory Bandwidth <span class="src-badge derived">DERIVED</span></span><span id="bwValue">--</span></div>
+          <div class="metric-header"><span>Memory Bandwidth <span class="src-badge profiled">PROFILED</span></span><span id="bwValue">--</span></div>
           <div class="meter"><span id="bwBar"></span></div>
         </div>
         <div class="metric-block">
@@ -954,8 +1100,8 @@ DASHBOARD_HTML = """
           <div class="meter"><span id="warpBar"></span></div>
         </div>
         <div class="empty" id="resourceHint">Metrics are derived from live batch timing and selected profile for demo visualization.</div>
-        <div class="panel-title" style="margin-top:10px;">Scheduler Decision Log <span class="src-badge measured">EVENTS</span></div>
-        <div class="log-box" id="schedulerLog"></div>
+        <div class="panel-title" style="margin-top:10px;">Real Event Log <span class="src-badge measured">EVENTS</span></div>
+        <div class="log-box" id="eventLog"></div>
       </div>
     </div>
   </div>
@@ -964,10 +1110,7 @@ DASHBOARD_HTML = """
     const fmt = (v, suffix = 's') => (Number.isFinite(v) ? `${v.toFixed(4)} ${suffix}` : '--');
     let refreshMs = 1000;
     let refreshTimer = null;
-    let schedulerName = 'FIFO';
-    let schedulerLog = [];
     let queueDepthHistory = [];
-    let lastLoggedBatch = -1;
 
     function formatSeconds(sec) {
       if (!Number.isFinite(sec)) return '--';
@@ -987,67 +1130,43 @@ DASHBOARD_HTML = """
       return { selectedModel, selectedGpu };
     }
 
-    function getProfileFactors(model, gpu) {
-      let computeScale = 1.0;
-      let utilBias = 1.0;
-      let vramScale = 1.0;
-      let bwScale = 1.0;
-
-      const m = (model || '').toLowerCase();
-      const g = (gpu || '').toUpperCase();
-
-      if (m.includes('resnet18') || m.includes('mobilenet') || m.includes('mnasnet') || m.includes('squeezenet')) {
-        computeScale *= 0.78;
-        utilBias *= 0.85;
-        vramScale *= 0.72;
-      } else if (m.includes('resnet50') || m.includes('densenet121') || m.includes('shufflenet')) {
-        computeScale *= 0.98;
-        utilBias *= 1.0;
-      } else if (m.includes('vgg') || m.includes('resnet152') || m.includes('wide_resnet') || m.includes('densenet201')) {
-        computeScale *= 1.22;
-        utilBias *= 1.18;
-        vramScale *= 1.28;
-        bwScale *= 1.15;
-      }
-
-      if (g.includes('A100')) {
-        computeScale *= 0.62;
-        utilBias *= 1.2;
-        bwScale *= 1.38;
-        vramScale *= 1.35;
-      } else if (g.includes('V100')) {
-        computeScale *= 0.74;
-        utilBias *= 1.12;
-        bwScale *= 1.22;
-      } else if (g.includes('P100')) {
-        computeScale *= 0.84;
-        utilBias *= 1.05;
-        bwScale *= 1.1;
-      } else if (g.includes('RTX_6000')) {
-        computeScale *= 0.92;
-        utilBias *= 1.0;
-      } else if (g.includes('M40') || g.includes('K80')) {
-        computeScale *= 1.12;
-        utilBias *= 0.82;
-        bwScale *= 0.78;
-      }
-
-      return { computeScale, utilBias, vramScale, bwScale };
-    }
-
     function adjustedTimes(metrics) {
       const { selectedModel, selectedGpu } = getCurrentSelection(metrics);
-      const factors = getProfileFactors(selectedModel, selectedGpu);
       const batches = Array.isArray(metrics.batches) ? metrics.batches : [];
       return {
-        factors,
         selectedModel,
         selectedGpu,
+        profile: metrics.profile_stats || {},
         adjusted: batches.map((item) => ({
           batch: Number(item.batch),
-          compute_time: Math.max(0.004, (Number(item.compute_time) || 0) * factors.computeScale)
+          compute_time: Math.max(0.004, Number(item.compute_time) || 0)
         }))
       };
+    }
+
+    function deriveRuntimeSignals(metrics, data) {
+      const list = data.adjusted;
+      const avg = list.length > 0 ? (list.reduce((acc, it) => acc + it.compute_time, 0) / list.length) : 0;
+      const minVal = list.length > 0 ? Math.min(...list.map((it) => it.compute_time)) : avg;
+      const throughput = avg > 0 ? (1 / avg) : 0;
+
+      const expected = Number(metrics.total_expected_batches);
+      const total = Number(metrics.total_batches);
+      let pendingRatio = 0;
+      if (metrics.status === 'running' && Number.isFinite(expected) && expected > 0 && Number.isFinite(total)) {
+        pendingRatio = clamp((expected - total) / expected, 0, 1);
+      }
+
+      let util = 0;
+      const backendUtil = Number(metrics.compute_utilization);
+      if (Number.isFinite(backendUtil) && backendUtil >= 0) {
+        util = clamp(backendUtil, 0, 100);
+      } else if (avg > 0 && minVal > 0) {
+        util = clamp((minVal / avg) * 100, 0, 100);
+      }
+
+      const jitter = clamp((avg - minVal) / Math.max(0.005, avg), 0, 1);
+      return { avg, minVal, throughput, util, pendingRatio, jitter };
     }
 
     function restartTicker() {
@@ -1057,23 +1176,28 @@ DASHBOARD_HTML = """
       refreshTimer = setInterval(tick, refreshMs);
     }
 
-    function pushLog(message) {
-      const stamp = new Date().toLocaleTimeString();
-      schedulerLog.push(`[${stamp}] ${message}`);
-      if (schedulerLog.length > 22) {
-        schedulerLog = schedulerLog.slice(-22);
-      }
-      renderLog();
-    }
-
-    function renderLog() {
-      const box = document.getElementById('schedulerLog');
+    function renderEventLog(metrics) {
+      const box = document.getElementById('eventLog');
       if (!box) return;
-      if (schedulerLog.length === 0) {
-        box.innerHTML = '<div class="log-entry">No scheduling events yet.</div>';
+      const batches = Array.isArray(metrics.batches) ? metrics.batches : [];
+      if (batches.length === 0) {
+        box.innerHTML = '<div class="log-entry">No batch completion events yet.</div>';
         return;
       }
-      box.innerHTML = schedulerLog.slice(-12).reverse().map((entry) => `<div class="log-entry">${entry}</div>`).join('');
+      const avg = Number(metrics.avg_compute_time);
+      const recent = batches.slice(-8).reverse();
+      box.innerHTML = recent.map((item) => {
+        const t = Number(item.compute_time);
+        const ts = Number(item.timestamp);
+        let cls = 'medium';
+        if (Number.isFinite(avg) && Number.isFinite(t)) {
+          if (t < avg) cls = 'fast';
+          else if (t > avg * 1.2) cls = 'slow';
+        }
+        const tsLabel = Number.isFinite(ts) ? new Date(ts * 1000).toLocaleTimeString() : '--';
+        const timeLabel = Number.isFinite(t) ? t.toFixed(4) : '--';
+        return `<div class="log-entry ${cls}">Batch ${Number(item.batch)} completed in ${timeLabel}s at ${tsLabel}</div>`;
+      }).join('');
     }
 
     function renderQueueSparkline(depth) {
@@ -1120,20 +1244,23 @@ DASHBOARD_HTML = """
         text.textContent = 'SIMULATION COMPLETE';
       } else {
         badge.classList.add('running');
-        text.textContent = `RUNNING (${schedulerName})`;
+        text.textContent = 'RUNNING';
       }
     }
 
     function resetDashboardState() {
       document.getElementById('utilTop').textContent = '--';
-      document.getElementById('waitTop').textContent = '--';
+      document.getElementById('avgTop').textContent = '--';
+      document.getElementById('minTop').textContent = '--';
+      document.getElementById('maxTop').textContent = '--';
+      document.getElementById('throughputTop').textContent = '--';
+      document.getElementById('etaTop').textContent = '--';
       document.getElementById('doneTop').textContent = '0';
-      document.getElementById('timeTop').textContent = '--';
       document.getElementById('meta').textContent = 'Awaiting run metadata...';
       document.getElementById('taskQueue').innerHTML = '<div class="empty">No tasks yet. Start a run to enqueue batches.</div>';
       document.getElementById('timelineCoreContainer').innerHTML = '<div class="timeline-core" id="timelineCore"><div class="core-label">Core 1</div></div>';
       document.getElementById('timelineAxis').textContent = '';
-      document.getElementById('coreSummary').textContent = 'Core allocation: waiting for GPU selection';
+      document.getElementById('coreSummary').textContent = 'Sequential execution timeline from real batch completions';
       setMeter('utilBar', 0);
       setMeter('vramBar', 0);
       setMeter('bwBar', 0);
@@ -1145,10 +1272,8 @@ DASHBOARD_HTML = """
       document.getElementById('nowExec').textContent = 'Now Executing: Idle';
       document.getElementById('nowExecMeta').textContent = 'State: waiting | Source: profiled timing + measured runtime events';
       queueDepthHistory = [];
-      schedulerLog = [];
-      lastLoggedBatch = -1;
       renderQueueSparkline(0);
-      renderLog();
+      renderEventLog({ batches: [] });
       setStatus('waiting', false);
     }
 
@@ -1207,24 +1332,21 @@ DASHBOARD_HTML = """
 
     function renderTopStats(metrics) {
       const data = adjustedTimes(metrics);
-      const list = data.adjusted;
-      const avg = list.length > 0 ? (list.reduce((acc, it) => acc + it.compute_time, 0) / list.length) : 0;
-      const minVal = list.length > 0 ? Math.min(...list.map((it) => it.compute_time)) : avg;
-      const throughput = avg > 0 ? (1 / avg) * 0.85 : 0;
-      const util = clamp(throughput * avg * 100 * data.factors.utilBias, 0, 100);
-      const wait = Math.max(0, avg - minVal);
+      const signals = deriveRuntimeSignals(metrics, data);
       const done = Number(metrics.total_batches) || 0;
+      const avg = Number(metrics.avg_compute_time);
+      const minVal = Number(metrics.min_compute_time);
+      const maxVal = Number(metrics.max_compute_time);
+      const throughput = Number(metrics.throughput);
+      const eta = Number(metrics.eta_seconds);
 
-      let elapsed = null;
-      if (metrics.start_time) {
-        const raw = (Date.now() / 1000) - Number(metrics.start_time);
-        elapsed = Number.isFinite(raw) ? Math.max(0, raw) : null;
-      }
-
-      document.getElementById('utilTop').textContent = `${util.toFixed(1)}%`;
-      document.getElementById('waitTop').textContent = fmt(wait);
+      document.getElementById('utilTop').textContent = `${signals.util.toFixed(1)}%`;
+      document.getElementById('avgTop').textContent = Number.isFinite(avg) ? `${avg.toFixed(4)}s` : '--';
+      document.getElementById('minTop').textContent = Number.isFinite(minVal) ? `${minVal.toFixed(4)}s` : '--';
+      document.getElementById('maxTop').textContent = Number.isFinite(maxVal) ? `${maxVal.toFixed(4)}s` : '--';
+      document.getElementById('throughputTop').textContent = Number.isFinite(throughput) ? `${throughput.toFixed(2)} b/s` : '--';
+      document.getElementById('etaTop').textContent = formatSeconds(eta);
       document.getElementById('doneTop').textContent = `${done}`;
-      document.getElementById('timeTop').textContent = formatSeconds(elapsed);
     }
 
     function renderTaskQueue(metrics) {
@@ -1250,13 +1372,7 @@ DASHBOARD_HTML = """
       const total = Number(metrics.total_batches);
       let queueDepth = 0;
       if (metrics.status === 'running' && Number.isFinite(expected) && Number.isFinite(total)) {
-        const remain = Math.max(0, expected - total);
-        queueDepth = remain;
-        const base = preview.length > 0 ? preview[preview.length - 1].batch + 1 : total;
-        const queuedCount = Math.min(2, remain);
-        for (let i = 0; i < queuedCount; i += 1) {
-          preview.push({ batch: base + i, compute_time: null, status: 'QUEUED' });
-        }
+        queueDepth = Math.max(0, expected - total);
       }
 
       renderQueueSparkline(queueDepth);
@@ -1297,7 +1413,7 @@ DASHBOARD_HTML = """
       }
 
       nowTitle.textContent = `Now Executing: Batch ${batchId} (${phase})`;
-      nowMeta.textContent = `Time: ${Number.isFinite(compute) ? compute.toFixed(4) + 's' : '--'} | Scheduler: ${schedulerName} | Profile: ${data.selectedGpu}/${data.selectedModel}`;
+      nowMeta.textContent = `Time: ${Number.isFinite(compute) ? compute.toFixed(4) + 's' : '--'} | Mode: sequential batch execution | Profile: ${data.selectedGpu}/${data.selectedModel}`;
     }
 
     function renderTimeline(metrics) {
@@ -1308,19 +1424,7 @@ DASHBOARD_HTML = """
       const batches = data.adjusted;
       const coreSummary = document.getElementById('coreSummary');
 
-      function getGpuCoreCount(gpuName) {
-        const g = (gpuName || '').toUpperCase();
-        if (g.includes('A100')) return 108;
-        if (g.includes('V100')) return 80;
-        if (g.includes('P100')) return 56;
-        if (g.includes('RTX_6000')) return 72;
-        if (g.includes('M40')) return 24;
-        if (g.includes('K80')) return 13;
-        return 16;
-      }
-
-      const coreCount = getGpuCoreCount(data.selectedGpu);
-      coreSummary.textContent = `Core allocation: ${coreCount} cores active on ${data.selectedGpu} using ${schedulerName}`;
+      coreSummary.textContent = `Sequential execution timeline from real batches on ${data.selectedGpu}`;
 
       if (batches.length === 0) {
         coreContainer.innerHTML = '<div class="timeline-core" id="timelineCore"><div class="core-label">Core 1</div></div>';
@@ -1328,33 +1432,15 @@ DASHBOARD_HTML = """
         return;
       }
 
-      let viewBatches = batches.slice(-120).map((item) => ({
+      const viewBatches = batches.slice(-120).map((item) => ({
         batch: Number(item.batch),
         compute_time: Number(item.compute_time) || 0
       }));
 
-      if (schedulerName === 'SJF') {
-        viewBatches = [...viewBatches].sort((a, b) => a.compute_time - b.compute_time);
-      }
-
       const avg = (viewBatches.reduce((acc, item) => acc + item.compute_time, 0) / viewBatches.length) || 0.0001;
       const scale = 85;
-      const cores = Array.from({ length: coreCount }, () => ({ load: 0, bars: [] }));
-
-      const emitBar = (coreIndex, batchId, duration, className, label) => {
-        const left = cores[coreIndex].load * scale;
-        const width = Math.max(7, duration * scale);
-        cores[coreIndex].bars.push(`<div class="timeline-bar ${className}" style="left:${left}px;width:${width}px;">${label || ('B' + batchId)}</div>`);
-        cores[coreIndex].load += duration;
-      };
-
-      const leastLoadedCore = () => {
-        let idx = 0;
-        for (let i = 1; i < cores.length; i += 1) {
-          if (cores[i].load < cores[idx].load) idx = i;
-        }
-        return idx;
-      };
+      const bars = [];
+      let cursor = 0;
 
       const classForDuration = (duration) => {
         if (duration > avg * 1.2) return 'slow';
@@ -1362,50 +1448,18 @@ DASHBOARD_HTML = """
         return 'fast';
       };
 
-      if (schedulerName === 'Round Robin') {
-        const quantum = Math.max(0.018, avg * 0.42);
-        const rr = viewBatches.map((it) => ({ ...it, remaining: it.compute_time }));
-        let guard = 0;
-        let nextCore = 0;
-        while (rr.some((it) => it.remaining > 0.0005) && guard < 4000) {
-          for (const item of rr) {
-            if (item.remaining <= 0.0005) continue;
-            const slice = Math.min(item.remaining, quantum);
-            const cls = classForDuration(item.compute_time);
-            emitBar(nextCore, item.batch, slice, cls, `B${item.batch}`);
-            item.remaining -= slice;
-            nextCore = (nextCore + 1) % cores.length;
-            guard += 1;
-          }
-        }
-      } else {
-        for (const item of viewBatches) {
-          const duration = Math.max(0.004, item.compute_time);
-          const cls = classForDuration(duration);
-          const coreIdx = leastLoadedCore();
-          emitBar(coreIdx, item.batch, duration, cls, `B${item.batch}`);
-        }
+      for (const item of viewBatches) {
+        const duration = Math.max(0.004, item.compute_time);
+        const cls = classForDuration(duration);
+        const left = cursor * scale;
+        const width = Math.max(7, duration * scale);
+        bars.push(`<div class="timeline-bar ${cls}" style="left:${left}px;width:${width}px;">B${item.batch}</div>`);
+        cursor += duration;
       }
 
-      const expected = Number(metrics.total_expected_batches);
-      const total = Number(metrics.total_batches);
-      if (metrics.status === 'running' && Number.isFinite(expected) && Number.isFinite(total)) {
-        const pending = Math.max(0, expected - total);
-        const queuedCount = Math.min(coreCount * 2, pending);
-        const avgDuration = Math.max(0.02, avg);
-        const startBatch = viewBatches.length > 0 ? viewBatches[viewBatches.length - 1].batch + 1 : total;
-        for (let i = 0; i < queuedCount; i += 1) {
-          const coreIdx = leastLoadedCore();
-          const duration = avgDuration * 0.9;
-          emitBar(coreIdx, startBatch + i, duration, 'queued', `Q${startBatch + i}`);
-        }
-      }
-
-      const totalSec = Math.max(...cores.map((c) => c.load));
+      const totalSec = Math.max(0.001, cursor);
       const minW = Math.max(780, Math.ceil(totalSec * scale) + 90);
-      coreContainer.innerHTML = cores.map((coreLane, idx) => (
-        `<div class="timeline-core" style="min-width:${minW}px;"><div class="core-label">Core ${idx + 1}</div>${coreLane.bars.join('')}</div>`
-      )).join('');
+      coreContainer.innerHTML = `<div class="timeline-core" style="min-width:${minW}px;"><div class="core-label">Batch Stream</div>${bars.join('')}</div>`;
 
       axis.innerHTML = `
         <span>0s</span>
@@ -1420,23 +1474,34 @@ DASHBOARD_HTML = """
 
     function renderResources(metrics) {
       const data = adjustedTimes(metrics);
-      const list = data.adjusted;
-      const avg = list.length > 0 ? (list.reduce((acc, it) => acc + it.compute_time, 0) / list.length) : 0;
-      const throughput = avg > 0 ? (1 / avg) * 0.8 : 0;
-      const utilRaw = throughput * avg * 100;
-      const util = clamp(((utilRaw * 1.2) + (Number(metrics.batch_size) || 0) * 0.35) * data.factors.utilBias, 0, 100);
+      const signals = deriveRuntimeSignals(metrics, data);
+      const util = signals.util;
       const batchSize = Number(metrics.batch_size) || 0;
+      const profile = data.profile || {};
 
       const memText = (metrics.gpu_info && metrics.gpu_info.memory_gb) || 'Unknown';
       const totalMem = Number.parseFloat(memText) || 24;
-      const vramUsed = clamp(((batchSize * 0.08) + util * 0.07) * data.factors.vramScale, 0, totalMem);
-      const vramPct = clamp((vramUsed / Math.max(1, totalMem)) * 100, 0, 100);
+      const vramRaw = Number(profile.memory_peak_gb);
+      const hasVram = Number.isFinite(vramRaw) && vramRaw > 0;
+      const vramUsed = hasVram ? clamp(vramRaw, 0, totalMem) : NaN;
+      const vramPct = hasVram ? clamp((vramUsed / Math.max(1, totalMem)) * 100, 0, 100) : 0;
 
-      const bw = clamp((throughput * batchSize * 0.35) * data.factors.bwScale, 0, 900);
-      const bwPct = clamp((bw / 900) * 100, 0, 100);
+      const bwRaw = Number(profile.estimated_bandwidth_gbps);
+      const hasBw = Number.isFinite(bwRaw) && bwRaw >= 0;
+      const bw = hasBw ? clamp(bwRaw, 0, 900) : NaN;
+      const bwPct = hasBw ? clamp((bw / 900) * 100, 0, 100) : 0;
 
-      const warps = Math.max(1, Math.ceil(batchSize / 32));
-      const warpPct = clamp((warps / 64) * 100, 0, 100);
+      const gpuName = String(data.selectedGpu || '').toUpperCase();
+      let warpSlots = 64;
+      if (gpuName.includes('A100')) warpSlots = 96;
+      else if (gpuName.includes('V100')) warpSlots = 80;
+      else if (gpuName.includes('P100')) warpSlots = 64;
+      else if (gpuName.includes('RTX_6000')) warpSlots = 72;
+      else if (gpuName.includes('M40')) warpSlots = 48;
+      else if (gpuName.includes('K80')) warpSlots = 32;
+
+      const warps = clamp(Math.round((util / 100) * warpSlots), 1, warpSlots);
+      const warpPct = clamp((warps / warpSlots) * 100, 0, 100);
 
       setMeter('utilBar', util);
       setMeter('vramBar', vramPct);
@@ -1444,9 +1509,9 @@ DASHBOARD_HTML = """
       setMeter('warpBar', warpPct);
 
       document.getElementById('utilValue').textContent = `${util.toFixed(1)}%`;
-      document.getElementById('vramValue').textContent = `${vramUsed.toFixed(1)} / ${totalMem.toFixed(0)} GB`;
-      document.getElementById('bwValue').textContent = `${bw.toFixed(1)} GB/s`;
-      document.getElementById('warpValue').textContent = `${warps} warps`;
+      document.getElementById('vramValue').textContent = Number.isFinite(vramUsed) ? `${vramUsed.toFixed(1)} / ${totalMem.toFixed(0)} GB` : '--';
+      document.getElementById('bwValue').textContent = Number.isFinite(bw) ? `${bw.toFixed(1)} GB/s` : '--';
+      document.getElementById('warpValue').textContent = `${warps} / ${warpSlots} warps`;
 
       const headroom = Math.max(0, 100 - util);
       const hintLevel = util < 45 ? 'low' : (util < 75 ? 'moderate' : 'high');
@@ -1456,11 +1521,11 @@ DASHBOARD_HTML = """
       const activeGpu = data.selectedGpu;
       const expected = metrics.total_expected_batches || '?';
       const bs = metrics.batch_size || '32';
-      document.getElementById('meta').textContent = `Model ${activeModel.toUpperCase()} | GPU ${activeGpu} | Batch Size ${bs} | Expected Batches ${expected} | Scheduler ${schedulerName}`;
+      document.getElementById('meta').textContent = `Model ${activeModel.toUpperCase()} | GPU ${activeGpu} | Batch Size ${bs} | Expected Batches ${expected}`;
 
       updateModelInfo(metrics.model_info, activeModel);
       updateGpuInfo(metrics.gpu_info, activeGpu);
-      document.getElementById('algoActive').innerHTML = `<strong>Scheduler:</strong> ${schedulerName}`;
+      document.getElementById('algoActive').innerHTML = '<strong>Current mode:</strong> sequential batch execution';
     }
 
     async function setModelSelection(model) {
@@ -1488,7 +1553,6 @@ DASHBOARD_HTML = """
     async function startNewRun() {
       await fetch('/api/start_new_run', { method: 'POST' });
       resetDashboardState();
-      pushLog('New run initialized; queue cleared and scheduler reset.');
       await tick();
     }
 
@@ -1518,23 +1582,7 @@ DASHBOARD_HTML = """
         renderTimeline(metrics);
         renderNowExecuting(metrics);
         renderResources(metrics);
-
-        if (batches.length > 0) {
-          const lastBatch = Number(batches[batches.length - 1].batch);
-          if (Number.isFinite(lastBatch) && lastBatch > lastLoggedBatch) {
-            for (let b = lastLoggedBatch + 1; b <= lastBatch; b += 1) {
-              pushLog(`${schedulerName} dispatched Batch ${b}`);
-            }
-            lastLoggedBatch = lastBatch;
-          }
-        }
-
-        if (metrics.status === 'completed') {
-          const total = Number(metrics.total_batches) || 0;
-          if (schedulerLog.length === 0 || !schedulerLog[schedulerLog.length - 1].includes('Simulation marked completed')) {
-            pushLog(`Simulation marked completed with ${total} tasks finished.`);
-          }
-        }
+        renderEventLog(metrics);
       } catch (_err) {
         setStatus('waiting', false);
       }
@@ -1549,7 +1597,6 @@ DASHBOARD_HTML = """
         await setModelSelection(evt.target.value);
         resetDashboardState();
         await tick();
-        pushLog(`Model switched to ${evt.target.value}.`);
       } catch (_err) {
       }
     });
@@ -1559,31 +1606,8 @@ DASHBOARD_HTML = """
         await setGpuSelection(evt.target.value);
         resetDashboardState();
         await tick();
-        pushLog(`GPU profile switched to ${evt.target.value}.`);
       } catch (_err) {
       }
-    });
-
-    document.getElementById('algoSelector').addEventListener('change', (evt) => {
-      schedulerName = evt.target.value;
-      document.getElementById('algoActive').innerHTML = `<strong>Scheduler:</strong> ${schedulerName}`;
-      pushLog(`Scheduling policy set to ${schedulerName} (demo uses FIFO execution).`);
-    });
-
-    document.getElementById('speedSlider').addEventListener('input', (evt) => {
-      const value = Number(evt.target.value);
-      if (value === 0) {
-        refreshMs = 2000;
-        document.getElementById('speedLabel').textContent = 'Slow (2.0s)';
-      } else if (value === 2) {
-        refreshMs = 500;
-        document.getElementById('speedLabel').textContent = 'Fast (0.5s)';
-      } else {
-        refreshMs = 1000;
-        document.getElementById('speedLabel').textContent = 'Normal (1.0s)';
-      }
-      restartTicker();
-      pushLog(`Simulation refresh interval changed to ${(refreshMs / 1000).toFixed(1)}s.`);
     });
 
     document.getElementById('startRunBtn').addEventListener('click', async () => {
@@ -1674,6 +1698,7 @@ def _clear_metrics_file() -> None:
 def _safe_metrics_payload() -> Dict[str, Any]:
   selected_model = _load_selected_model()
   selected_gpu = _load_selected_gpu()
+  profile_stats = _get_profile_stats(selected_gpu, selected_model, 32)
   profiles = _scan_gpu_profiles()
   return {
     'batches': [],
@@ -1694,7 +1719,8 @@ def _safe_metrics_payload() -> Dict[str, Any]:
     'min_compute_time': None,
     'max_compute_time': None,
     'throughput': None,
-    'eta_seconds': None
+    'eta_seconds': None,
+    'profile_stats': profile_stats
   }
 
 
@@ -1754,6 +1780,7 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   avg_time = sum(times) / total_batches
   min_time = min(times)
   max_time = max(times)
+  busy_time = sum(times)
 
   start_time = enriched.get('start_time')
   elapsed = None
@@ -1767,6 +1794,10 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   if elapsed and elapsed > 0:
     throughput = total_batches / elapsed
 
+  compute_utilization = None
+  if elapsed and elapsed > 0:
+    compute_utilization = max(0.0, min((busy_time / elapsed) * 100.0, 100.0))
+
   eta_seconds = None
   expected = enriched.get('total_expected_batches')
   try:
@@ -1779,11 +1810,16 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   enriched['avg_compute_time'] = avg_time
   enriched['min_compute_time'] = min_time
   enriched['max_compute_time'] = max_time
+  enriched['compute_busy_time'] = busy_time
+  enriched['compute_utilization'] = compute_utilization
   enriched['throughput'] = throughput
   enriched['eta_seconds'] = eta_seconds
 
   if enriched.get('status') not in ('running', 'completed'):
     enriched['status'] = 'running'
+
+  batch_size_for_profile = enriched.get('batch_size') or 32
+  enriched['profile_stats'] = _get_profile_stats(selected_gpu, active_model, batch_size_for_profile)
 
   return enriched
 

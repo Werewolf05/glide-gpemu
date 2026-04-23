@@ -240,6 +240,15 @@ def main():
     if '--gpemu-enable' not in sys.argv:
         args.gpemu_enable = bool(args.gpemu_gpu)
 
+    # Log loaded configuration at startup
+    model_source = "from dashboard config (selected_model.json)" if ('-a' not in sys.argv and '--arch' not in sys.argv) else "from command line"
+    gpu_source = "from dashboard config (selected_gpu.json)" if '--gpemu-gpu' not in sys.argv else "from command line"
+    print(f"[STARTUP] Model: {args.arch} ({model_source})")
+    print(f"[STARTUP] GPU Profile: {args.gpemu_gpu} ({gpu_source})")
+    if args.gpemu_enable:
+        print(f"[STARTUP] GPEmu emulation: ENABLED")
+    print(f"[STARTUP] Batch size: {args.batch_size}, Workers: {args.workers}")
+
     if args.seed is not None:
         random.seed(args.seed)
         torch.manual_seed(args.seed)
