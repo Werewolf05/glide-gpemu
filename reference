@@ -1,0 +1,15 @@
+terminal-1
+
+sudo docker exec -it glide-dev bash
+cd /workspace/gpemu
+python glide/dashboard_server.py
+
+terminal -2 
+
+sudo docker exec -it glide-dev bash
+cd /workspace/gpemu/examples/imagenet
+python main.py --dummy --epochs 1 -b 32 -j 1 --gpemu-enable
+
+
+
+sudo docker start glide-dev

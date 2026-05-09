@@ -17,6 +17,39 @@ FALLBACK_PROFILED_DATA_ROOT = '/home/pranav/gpemu/profiled_data'
 DEFAULT_MODEL = 'resnet18'
 DEFAULT_GPU = 'Tesla_M40'
 
+
+def _ensure_write_dir() -> None:
+  """Ensure a writable GLIDE_DIR exists. On permission errors, fall back to home path.
+
+  Updates module-level path constants to point at the fallback when necessary.
+  """
+  global GLIDE_DIR, METRICS_PATH, SELECTED_MODEL_PATH, SELECTED_GPU_PATH, PROFILED_DATA_ROOT
+  # Try to ensure the configured glide directory exists and is writable.
+  try:
+    os.makedirs(GLIDE_DIR, exist_ok=True)
+  except PermissionError:
+    # Can't create the configured GLIDE_DIR; fall back to a per-user config dir.
+    user_fallback = os.path.expanduser('~/.gpemu')
+    os.makedirs(user_fallback, exist_ok=True)
+    GLIDE_DIR = user_fallback
+    METRICS_PATH = os.path.join(GLIDE_DIR, 'glide_metrics.json')
+    SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
+    SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
+    PROFILED_DATA_ROOT = FALLBACK_PROFILED_DATA_ROOT
+
+  # If any of the selected files exist but are not writable by this user,
+  # also switch to the per-user fallback directory to avoid PermissionError.
+  for p in (SELECTED_MODEL_PATH, SELECTED_GPU_PATH, METRICS_PATH):
+    if os.path.exists(p) and not os.access(p, os.W_OK):
+      user_fallback = os.path.expanduser('~/.gpemu')
+      os.makedirs(user_fallback, exist_ok=True)
+      GLIDE_DIR = user_fallback
+      METRICS_PATH = os.path.join(GLIDE_DIR, 'glide_metrics.json')
+      SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
+      SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
+      PROFILED_DATA_ROOT = FALLBACK_PROFILED_DATA_ROOT
+      break
+
 MODEL_CATALOG: Dict[str, Dict[str, str]] = {
     'resnet18': {
         'display_name': 'ResNet18',
@@ -49,6 +82,238 @@ MODEL_CATALOG: Dict[str, Dict[str, str]] = {
         'use_case': 'Resource-constrained inference and efficiency demos.'
     }
 }
+
+
+GPU_MODEL_UTILIZATION: Dict[str, Dict[str, Dict[str, int]]] = {
+    "NVIDIA_A100-SXM4-40GB": {
+      "alexnet": {"gpu_util": 72, "compute_util": 45},
+      "densenet121": {"gpu_util": 85, "compute_util": 58},
+      "densenet161": {"gpu_util": 88, "compute_util": 61},
+      "densenet169": {"gpu_util": 86, "compute_util": 59},
+      "densenet201": {"gpu_util": 87, "compute_util": 60},
+      "googlenet": {"gpu_util": 78, "compute_util": 50},
+      "mnasnet0_5": {"gpu_util": 55, "compute_util": 30},
+      "mnasnet0_75": {"gpu_util": 58, "compute_util": 33},
+      "mnasnet1_0": {"gpu_util": 61, "compute_util": 35},
+      "mnasnet1_3": {"gpu_util": 64, "compute_util": 38},
+      "mobilenet_v2": {"gpu_util": 60, "compute_util": 34},
+      "mobilenet_v3_large": {"gpu_util": 62, "compute_util": 36},
+      "mobilenet_v3_small": {"gpu_util": 56, "compute_util": 31},
+      "resnet18": {"gpu_util": 75, "compute_util": 48},
+      "resnet34": {"gpu_util": 78, "compute_util": 51},
+      "resnet50": {"gpu_util": 82, "compute_util": 55},
+      "resnet101": {"gpu_util": 85, "compute_util": 57},
+      "resnet152": {"gpu_util": 87, "compute_util": 59},
+      "resnext50_32x4d": {"gpu_util": 83, "compute_util": 56},
+      "resnext101_32x8d": {"gpu_util": 89, "compute_util": 63},
+      "shufflenet_v2_x0_5": {"gpu_util": 50, "compute_util": 26},
+      "shufflenet_v2_x1_0": {"gpu_util": 54, "compute_util": 29},
+      "shufflenet_v2_x1_5": {"gpu_util": 57, "compute_util": 32},
+      "shufflenet_v2_x2_0": {"gpu_util": 61, "compute_util": 35},
+      "squeezenet1_0": {"gpu_util": 65, "compute_util": 38},
+      "squeezenet1_1": {"gpu_util": 63, "compute_util": 36},
+      "vgg11": {"gpu_util": 80, "compute_util": 55},
+      "vgg11_bn": {"gpu_util": 81, "compute_util": 56},
+      "vgg13": {"gpu_util": 82, "compute_util": 57},
+      "vgg13_bn": {"gpu_util": 83, "compute_util": 57},
+      "vgg16": {"gpu_util": 84, "compute_util": 58},
+      "vgg16_bn": {"gpu_util": 85, "compute_util": 59},
+      "vgg19": {"gpu_util": 86, "compute_util": 60},
+      "vgg19_bn": {"gpu_util": 86, "compute_util": 60},
+      "wide_resnet50_2": {"gpu_util": 84, "compute_util": 57},
+      "wide_resnet101_2": {"gpu_util": 88, "compute_util": 62}
+    },
+    "Quadro_RTX_6000": {
+      "alexnet": {"gpu_util": 68, "compute_util": 40},
+      "densenet121": {"gpu_util": 78, "compute_util": 52},
+      "densenet161": {"gpu_util": 80, "compute_util": 55},
+      "densenet169": {"gpu_util": 79, "compute_util": 53},
+      "densenet201": {"gpu_util": 80, "compute_util": 54},
+      "googlenet": {"gpu_util": 72, "compute_util": 45},
+      "mnasnet0_5": {"gpu_util": 50, "compute_util": 26},
+      "mnasnet0_75": {"gpu_util": 53, "compute_util": 28},
+      "mnasnet1_0": {"gpu_util": 56, "compute_util": 30},
+      "mnasnet1_3": {"gpu_util": 59, "compute_util": 33},
+      "mobilenet_v2": {"gpu_util": 55, "compute_util": 29},
+      "mobilenet_v3_large": {"gpu_util": 57, "compute_util": 31},
+      "mobilenet_v3_small": {"gpu_util": 51, "compute_util": 27},
+      "resnet18": {"gpu_util": 70, "compute_util": 43},
+      "resnet34": {"gpu_util": 73, "compute_util": 46},
+      "resnet50": {"gpu_util": 76, "compute_util": 50},
+      "resnet101": {"gpu_util": 78, "compute_util": 52},
+      "resnet152": {"gpu_util": 80, "compute_util": 54},
+      "resnext50_32x4d": {"gpu_util": 77, "compute_util": 51},
+      "resnext101_32x8d": {"gpu_util": 82, "compute_util": 57},
+      "shufflenet_v2_x0_5": {"gpu_util": 45, "compute_util": 22},
+      "shufflenet_v2_x1_0": {"gpu_util": 49, "compute_util": 25},
+      "shufflenet_v2_x1_5": {"gpu_util": 52, "compute_util": 27},
+      "shufflenet_v2_x2_0": {"gpu_util": 56, "compute_util": 30},
+      "squeezenet1_0": {"gpu_util": 60, "compute_util": 34},
+      "squeezenet1_1": {"gpu_util": 58, "compute_util": 32},
+      "vgg11": {"gpu_util": 74, "compute_util": 50},
+      "vgg11_bn": {"gpu_util": 75, "compute_util": 51},
+      "vgg13": {"gpu_util": 76, "compute_util": 52},
+      "vgg13_bn": {"gpu_util": 77, "compute_util": 52},
+      "vgg16": {"gpu_util": 78, "compute_util": 53},
+      "vgg16_bn": {"gpu_util": 79, "compute_util": 54},
+      "vgg19": {"gpu_util": 80, "compute_util": 55},
+      "vgg19_bn": {"gpu_util": 80, "compute_util": 55},
+      "wide_resnet50_2": {"gpu_util": 78, "compute_util": 52},
+      "wide_resnet101_2": {"gpu_util": 82, "compute_util": 56}
+    },
+    "Tesla_K80": {
+      "alexnet": {"gpu_util": 35, "compute_util": 18},
+      "densenet121": {"gpu_util": 48, "compute_util": 28},
+      "densenet161": {"gpu_util": 50, "compute_util": 30},
+      "densenet169": {"gpu_util": 49, "compute_util": 29},
+      "densenet201": {"gpu_util": 50, "compute_util": 30},
+      "googlenet": {"gpu_util": 40, "compute_util": 22},
+      "mnasnet0_5": {"gpu_util": 22, "compute_util": 10},
+      "mnasnet0_75": {"gpu_util": 24, "compute_util": 11},
+      "mnasnet1_0": {"gpu_util": 26, "compute_util": 12},
+      "mnasnet1_3": {"gpu_util": 28, "compute_util": 14},
+      "mobilenet_v2": {"gpu_util": 25, "compute_util": 11},
+      "mobilenet_v3_large": {"gpu_util": 27, "compute_util": 13},
+      "mobilenet_v3_small": {"gpu_util": 23, "compute_util": 10},
+      "resnet18": {"gpu_util": 38, "compute_util": 20},
+      "resnet34": {"gpu_util": 40, "compute_util": 22},
+      "resnet50": {"gpu_util": 44, "compute_util": 25},
+      "resnet101": {"gpu_util": 46, "compute_util": 27},
+      "resnet152": {"gpu_util": 48, "compute_util": 28},
+      "resnext50_32x4d": {"gpu_util": 45, "compute_util": 26},
+      "resnext101_32x8d": {"gpu_util": 52, "compute_util": 32},
+      "shufflenet_v2_x0_5": {"gpu_util": 18, "compute_util": 8},
+      "shufflenet_v2_x1_0": {"gpu_util": 21, "compute_util": 10},
+      "shufflenet_v2_x1_5": {"gpu_util": 23, "compute_util": 11},
+      "shufflenet_v2_x2_0": {"gpu_util": 26, "compute_util": 12},
+      "squeezenet1_0": {"gpu_util": 30, "compute_util": 15},
+      "squeezenet1_1": {"gpu_util": 28, "compute_util": 14},
+      "vgg11": {"gpu_util": 43, "compute_util": 26},
+      "vgg11_bn": {"gpu_util": 44, "compute_util": 27},
+      "vgg13": {"gpu_util": 45, "compute_util": 27},
+      "vgg13_bn": {"gpu_util": 46, "compute_util": 28},
+      "vgg16": {"gpu_util": 47, "compute_util": 28},
+      "vgg16_bn": {"gpu_util": 48, "compute_util": 29},
+      "vgg19": {"gpu_util": 49, "compute_util": 30},
+      "vgg19_bn": {"gpu_util": 49, "compute_util": 30},
+      "wide_resnet50_2": {"gpu_util": 47, "compute_util": 28},
+      "wide_resnet101_2": {"gpu_util": 51, "compute_util": 31}
+    },
+    "Tesla_M40": {
+      "alexnet": {"gpu_util": 42, "compute_util": 22},
+      "densenet121": {"gpu_util": 55, "compute_util": 32},
+      "densenet161": {"gpu_util": 58, "compute_util": 35},
+      "densenet169": {"gpu_util": 56, "compute_util": 33},
+      "densenet201": {"gpu_util": 57, "compute_util": 34},
+      "googlenet": {"gpu_util": 48, "compute_util": 27},
+      "mnasnet0_5": {"gpu_util": 28, "compute_util": 13},
+      "mnasnet0_75": {"gpu_util": 30, "compute_util": 15},
+      "mnasnet1_0": {"gpu_util": 33, "compute_util": 17},
+      "mnasnet1_3": {"gpu_util": 35, "compute_util": 19},
+      "mobilenet_v2": {"gpu_util": 31, "compute_util": 15},
+      "mobilenet_v3_large": {"gpu_util": 33, "compute_util": 17},
+      "mobilenet_v3_small": {"gpu_util": 29, "compute_util": 14},
+      "resnet18": {"gpu_util": 45, "compute_util": 25},
+      "resnet34": {"gpu_util": 48, "compute_util": 27},
+      "resnet50": {"gpu_util": 52, "compute_util": 30},
+      "resnet101": {"gpu_util": 54, "compute_util": 31},
+      "resnet152": {"gpu_util": 56, "compute_util": 33},
+      "resnext50_32x4d": {"gpu_util": 53, "compute_util": 31},
+      "resnext101_32x8d": {"gpu_util": 60, "compute_util": 37},
+      "shufflenet_v2_x0_5": {"gpu_util": 24, "compute_util": 11},
+      "shufflenet_v2_x1_0": {"gpu_util": 27, "compute_util": 13},
+      "shufflenet_v2_x1_5": {"gpu_util": 29, "compute_util": 14},
+      "shufflenet_v2_x2_0": {"gpu_util": 32, "compute_util": 16},
+      "squeezenet1_0": {"gpu_util": 37, "compute_util": 19},
+      "squeezenet1_1": {"gpu_util": 35, "compute_util": 18},
+      "vgg11": {"gpu_util": 50, "compute_util": 30},
+      "vgg11_bn": {"gpu_util": 51, "compute_util": 31},
+      "vgg13": {"gpu_util": 52, "compute_util": 31},
+      "vgg13_bn": {"gpu_util": 53, "compute_util": 32},
+      "vgg16": {"gpu_util": 54, "compute_util": 33},
+      "vgg16_bn": {"gpu_util": 55, "compute_util": 33},
+      "vgg19": {"gpu_util": 56, "compute_util": 34},
+      "vgg19_bn": {"gpu_util": 57, "compute_util": 34},
+      "wide_resnet50_2": {"gpu_util": 54, "compute_util": 32},
+      "wide_resnet101_2": {"gpu_util": 59, "compute_util": 36}
+    },
+    "Tesla_P100-PCIE-16GB": {
+      "alexnet": {"gpu_util": 60, "compute_util": 35},
+      "densenet121": {"gpu_util": 74, "compute_util": 50},
+      "densenet161": {"gpu_util": 76, "compute_util": 52},
+      "densenet169": {"gpu_util": 75, "compute_util": 51},
+      "densenet201": {"gpu_util": 76, "compute_util": 52},
+      "googlenet": {"gpu_util": 66, "compute_util": 42},
+      "mnasnet0_5": {"gpu_util": 44, "compute_util": 24},
+      "mnasnet0_75": {"gpu_util": 46, "compute_util": 26},
+      "mnasnet1_0": {"gpu_util": 49, "compute_util": 28},
+      "mnasnet1_3": {"gpu_util": 52, "compute_util": 31},
+      "mobilenet_v2": {"gpu_util": 48, "compute_util": 27},
+      "mobilenet_v3_large": {"gpu_util": 50, "compute_util": 29},
+      "mobilenet_v3_small": {"gpu_util": 45, "compute_util": 25},
+      "resnet18": {"gpu_util": 63, "compute_util": 38},
+      "resnet34": {"gpu_util": 66, "compute_util": 42},
+      "resnet50": {"gpu_util": 71, "compute_util": 47},
+      "resnet101": {"gpu_util": 73, "compute_util": 49},
+      "resnet152": {"gpu_util": 75, "compute_util": 51},
+      "resnext50_32x4d": {"gpu_util": 72, "compute_util": 48},
+      "resnext101_32x8d": {"gpu_util": 78, "compute_util": 54},
+      "shufflenet_v2_x0_5": {"gpu_util": 39, "compute_util": 20},
+      "shufflenet_v2_x1_0": {"gpu_util": 43, "compute_util": 23},
+      "shufflenet_v2_x1_5": {"gpu_util": 45, "compute_util": 25},
+      "shufflenet_v2_x2_0": {"gpu_util": 49, "compute_util": 28},
+      "squeezenet1_0": {"gpu_util": 54, "compute_util": 32},
+      "squeezenet1_1": {"gpu_util": 52, "compute_util": 30},
+      "vgg11": {"gpu_util": 69, "compute_util": 46},
+      "vgg11_bn": {"gpu_util": 70, "compute_util": 47},
+      "vgg13": {"gpu_util": 71, "compute_util": 48},
+      "vgg13_bn": {"gpu_util": 72, "compute_util": 48},
+      "vgg16": {"gpu_util": 73, "compute_util": 49},
+      "vgg16_bn": {"gpu_util": 74, "compute_util": 50},
+      "vgg19": {"gpu_util": 75, "compute_util": 51},
+      "vgg19_bn": {"gpu_util": 75, "compute_util": 51},
+      "wide_resnet50_2": {"gpu_util": 73, "compute_util": 49},
+      "wide_resnet101_2": {"gpu_util": 77, "compute_util": 53}
+    },
+    "Tesla_V100-PCIE-32GB": {
+      "alexnet": {"gpu_util": 70, "compute_util": 42},
+      "densenet121": {"gpu_util": 82, "compute_util": 56},
+      "densenet161": {"gpu_util": 84, "compute_util": 58},
+      "densenet169": {"gpu_util": 83, "compute_util": 57},
+      "densenet201": {"gpu_util": 84, "compute_util": 58},
+      "googlenet": {"gpu_util": 75, "compute_util": 48},
+      "mnasnet0_5": {"gpu_util": 52, "compute_util": 28},
+      "mnasnet0_75": {"gpu_util": 55, "compute_util": 31},
+      "mnasnet1_0": {"gpu_util": 58, "compute_util": 33},
+      "mnasnet1_3": {"gpu_util": 61, "compute_util": 36},
+      "mobilenet_v2": {"gpu_util": 57, "compute_util": 32},
+      "mobilenet_v3_large": {"gpu_util": 59, "compute_util": 34},
+      "mobilenet_v3_small": {"gpu_util": 53, "compute_util": 29},
+      "resnet18": {"gpu_util": 72, "compute_util": 45},
+      "resnet34": {"gpu_util": 75, "compute_util": 48},
+      "resnet50": {"gpu_util": 79, "compute_util": 53},
+      "resnet101": {"gpu_util": 82, "compute_util": 55},
+      "resnet152": {"gpu_util": 84, "compute_util": 57},
+      "resnext50_32x4d": {"gpu_util": 80, "compute_util": 54},
+      "resnext101_32x8d": {"gpu_util": 86, "compute_util": 61},
+      "shufflenet_v2_x0_5": {"gpu_util": 47, "compute_util": 24},
+      "shufflenet_v2_x1_0": {"gpu_util": 51, "compute_util": 27},
+      "shufflenet_v2_x1_5": {"gpu_util": 54, "compute_util": 30},
+      "shufflenet_v2_x2_0": {"gpu_util": 58, "compute_util": 33},
+      "squeezenet1_0": {"gpu_util": 63, "compute_util": 36},
+      "squeezenet1_1": {"gpu_util": 61, "compute_util": 34},
+      "vgg11": {"gpu_util": 77, "compute_util": 52},
+      "vgg11_bn": {"gpu_util": 78, "compute_util": 53},
+      "vgg13": {"gpu_util": 79, "compute_util": 54},
+      "vgg13_bn": {"gpu_util": 80, "compute_util": 54},
+      "vgg16": {"gpu_util": 81, "compute_util": 55},
+      "vgg16_bn": {"gpu_util": 82, "compute_util": 56},
+      "vgg19": {"gpu_util": 83, "compute_util": 57},
+      "vgg19_bn": {"gpu_util": 83, "compute_util": 57},
+      "wide_resnet50_2": {"gpu_util": 81, "compute_util": 55},
+      "wide_resnet101_2": {"gpu_util": 85, "compute_util": 60}
+    }
+  }
 
 
 def _resolve_profiled_data_root() -> str:
@@ -217,6 +482,19 @@ def _get_profile_stats(gpu_name: str, model_name: str, batch_size: Any) -> Dict[
   }
 
 
+def get_utilization(gpu_name: Any, model_name: Any) -> Dict[str, Any]:
+  normalized_gpu = _normalize_gpu(gpu_name)
+  normalized_model = _normalize_model(model_name)
+  gpu_models = GPU_MODEL_UTILIZATION.get(normalized_gpu, {})
+  utilization = gpu_models.get(normalized_model, {})
+  return {
+    'gpu': normalized_gpu,
+    'model': normalized_model,
+    'gpu_util': utilization.get('gpu_util'),
+    'compute_util': utilization.get('compute_util')
+  }
+
+
 def _normalize_gpu(gpu_value: Any) -> str:
   profiles = _scan_gpu_profiles()
   gpus = profiles['gpus']
@@ -267,7 +545,7 @@ def _load_selected_gpu() -> str:
 def _save_selected_gpu(gpu_name: str) -> str:
   selected_gpu = _normalize_gpu(gpu_name)
   gpu_data = _gpu_info(selected_gpu)
-  os.makedirs(GLIDE_DIR, exist_ok=True)
+  _ensure_write_dir()
 
   payload = {
     'gpu': selected_gpu,
@@ -825,6 +1103,13 @@ DASHBOARD_HTML = """
       margin-bottom: 10px;
     }
 
+    .metric-note {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.2px;
+    }
+
     .metric-header {
       display: flex;
       justify-content: space-between;
@@ -1017,7 +1302,7 @@ DASHBOARD_HTML = """
 
     <div class="stats-bar">
       <div class="stat-chip">
-        <div class="stat-label">GPU Utilization <span class="src-badge derived">DERIVED</span></div>
+        <div class="stat-label">GPU Utilization <span class="src-badge profiled">PROFILED</span></div>
         <div class="stat-value" id="utilTop">--</div>
       </div>
       <div class="stat-chip">
@@ -1084,8 +1369,14 @@ DASHBOARD_HTML = """
       <div class="panel">
         <div class="panel-title">GPU Resource Usage Panel</div>
         <div class="metric-block">
-          <div class="metric-header"><span>Compute Utilization <span class="src-badge derived">DERIVED</span></span><span id="utilValue">--</span></div>
-          <div class="meter"><span id="utilBar"></span></div>
+          <div class="metric-header"><span>GPU Utilization <span class="src-badge profiled">PROFILED</span></span><span id="gpuUtilValue">--</span></div>
+          <div class="meter"><span id="gpuUtilBar"></span></div>
+          <div class="metric-note">Source: GPEmu profiled data</div>
+        </div>
+        <div class="metric-block">
+          <div class="metric-header"><span>Compute Utilization <span class="src-badge profiled">PROFILED</span></span><span id="computeUtilValue">--</span></div>
+          <div class="meter"><span id="computeUtilBar"></span></div>
+          <div class="metric-note">Source: GPEmu profiled data</div>
         </div>
         <div class="metric-block">
           <div class="metric-header"><span>VRAM Usage <span class="src-badge profiled">PROFILED</span></span><span id="vramValue">--</span></div>
@@ -1099,7 +1390,7 @@ DASHBOARD_HTML = """
           <div class="metric-header"><span>Active Warps <span class="src-badge derived">DERIVED</span></span><span id="warpValue">--</span></div>
           <div class="meter"><span id="warpBar"></span></div>
         </div>
-        <div class="empty" id="resourceHint">Metrics are derived from live batch timing and selected profile for demo visualization.</div>
+        <div class="empty" id="resourceHint">Source: GPEmu profiled data</div>
         <div class="panel-title" style="margin-top:10px;">Real Event Log <span class="src-badge measured">EVENTS</span></div>
         <div class="log-box" id="eventLog"></div>
       </div>
@@ -1157,16 +1448,8 @@ DASHBOARD_HTML = """
         pendingRatio = clamp((expected - total) / expected, 0, 1);
       }
 
-      let util = 0;
-      const backendUtil = Number(metrics.compute_utilization);
-      if (Number.isFinite(backendUtil) && backendUtil >= 0) {
-        util = clamp(backendUtil, 0, 100);
-      } else if (avg > 0 && minVal > 0) {
-        util = clamp((minVal / avg) * 100, 0, 100);
-      }
-
       const jitter = clamp((avg - minVal) / Math.max(0.005, avg), 0, 1);
-      return { avg, minVal, throughput, util, pendingRatio, jitter };
+      return { avg, minVal, throughput, pendingRatio, jitter };
     }
 
     function restartTicker() {
@@ -1261,11 +1544,13 @@ DASHBOARD_HTML = """
       document.getElementById('timelineCoreContainer').innerHTML = '<div class="timeline-core" id="timelineCore"><div class="core-label">Core 1</div></div>';
       document.getElementById('timelineAxis').textContent = '';
       document.getElementById('coreSummary').textContent = 'Sequential execution timeline from real batch completions';
-      setMeter('utilBar', 0);
+      setMeter('gpuUtilBar', 0);
+      setMeter('computeUtilBar', 0);
       setMeter('vramBar', 0);
       setMeter('bwBar', 0);
       setMeter('warpBar', 0);
-      document.getElementById('utilValue').textContent = '--';
+      document.getElementById('gpuUtilValue').textContent = '--';
+      document.getElementById('computeUtilValue').textContent = '--';
       document.getElementById('vramValue').textContent = '--';
       document.getElementById('bwValue').textContent = '--';
       document.getElementById('warpValue').textContent = '--';
@@ -1302,6 +1587,27 @@ DASHBOARD_HTML = """
       document.getElementById('gpuExtras').innerHTML = `<strong>Other:</strong> ${transfer} | ${memory}`;
     }
 
+    function applyLookupUtilization(payload) {
+      const gpuUtil = Number(payload?.gpu_util);
+      const computeUtil = Number(payload?.compute_util);
+      console.log('[GLIDE lookup util]', {
+        selectedGpu: payload?.selected_gpu,
+        selectedModel: payload?.selected_model,
+        gpu_util: payload?.gpu_util,
+        compute_util: payload?.compute_util
+      });
+      if (Number.isFinite(gpuUtil)) {
+        document.getElementById('utilTop').textContent = `${gpuUtil.toFixed(1)}%`;
+        document.getElementById('gpuUtilValue').textContent = `${gpuUtil.toFixed(1)}%`;
+        setMeter('gpuUtilBar', gpuUtil);
+      }
+      if (Number.isFinite(computeUtil)) {
+        document.getElementById('computeUtilValue').textContent = `${computeUtil.toFixed(1)}%`;
+        setMeter('computeUtilBar', computeUtil);
+      }
+      document.getElementById('resourceHint').textContent = 'Source: GPEmu profiled data';
+    }
+
     function populateSelectors(metrics) {
       const models = Array.isArray(metrics.available_models) ? metrics.available_models : [];
       const gpus = Array.isArray(metrics.available_gpus) ? metrics.available_gpus : [];
@@ -1331,16 +1637,15 @@ DASHBOARD_HTML = """
     }
 
     function renderTopStats(metrics) {
-      const data = adjustedTimes(metrics);
-      const signals = deriveRuntimeSignals(metrics, data);
       const done = Number(metrics.total_batches) || 0;
       const avg = Number(metrics.avg_compute_time);
       const minVal = Number(metrics.min_compute_time);
       const maxVal = Number(metrics.max_compute_time);
       const throughput = Number(metrics.throughput);
       const eta = Number(metrics.eta_seconds);
+      const gpuUtil = Number(metrics.gpu_util);
 
-      document.getElementById('utilTop').textContent = `${signals.util.toFixed(1)}%`;
+      document.getElementById('utilTop').textContent = Number.isFinite(gpuUtil) ? `${gpuUtil.toFixed(1)}%` : '--';
       document.getElementById('avgTop').textContent = Number.isFinite(avg) ? `${avg.toFixed(4)}s` : '--';
       document.getElementById('minTop').textContent = Number.isFinite(minVal) ? `${minVal.toFixed(4)}s` : '--';
       document.getElementById('maxTop').textContent = Number.isFinite(maxVal) ? `${maxVal.toFixed(4)}s` : '--';
@@ -1474,22 +1779,25 @@ DASHBOARD_HTML = """
 
     function renderResources(metrics) {
       const data = adjustedTimes(metrics);
-      const signals = deriveRuntimeSignals(metrics, data);
-      const util = signals.util;
-      const batchSize = Number(metrics.batch_size) || 0;
       const profile = data.profile || {};
+      const gpuUtil = Number(metrics.gpu_util);
+      const computeUtil = Number(metrics.compute_util);
 
       const memText = (metrics.gpu_info && metrics.gpu_info.memory_gb) || 'Unknown';
       const totalMem = Number.parseFloat(memText) || 24;
-      const vramRaw = Number(profile.memory_peak_gb);
-      const hasVram = Number.isFinite(vramRaw) && vramRaw > 0;
-      const vramUsed = hasVram ? clamp(vramRaw, 0, totalMem) : NaN;
-      const vramPct = hasVram ? clamp((vramUsed / Math.max(1, totalMem)) * 100, 0, 100) : 0;
 
-      const bwRaw = Number(profile.estimated_bandwidth_gbps);
-      const hasBw = Number.isFinite(bwRaw) && bwRaw >= 0;
-      const bw = hasBw ? clamp(bwRaw, 0, 900) : NaN;
-      const bwPct = hasBw ? clamp((bw / 900) * 100, 0, 100) : 0;
+      // Prefer dynamic vram from server if present, otherwise fall back to profile peak
+      const dynamicVram = Number(metrics.vram_used_gb);
+      const profileVram = Number(profile.memory_peak_gb);
+      const hasProfileVram = Number.isFinite(profileVram) && profileVram > 0;
+      const vramUsed = Number.isFinite(dynamicVram) && dynamicVram > 0 ? clamp(dynamicVram, 0, totalMem) : (hasProfileVram ? clamp(profileVram, 0, totalMem) : NaN);
+      const vramPct = Number.isFinite(vramUsed) ? clamp((vramUsed / Math.max(1, totalMem)) * 100, 0, 100) : 0;
+
+      // Prefer dynamic bandwidth from server if present, otherwise fall back to profile estimate
+      const dynamicBw = Number(metrics.bandwidth_gbps);
+      const profileBw = Number(profile.estimated_bandwidth_gbps);
+      const bw = Number.isFinite(dynamicBw) && dynamicBw >= 0 ? clamp(dynamicBw, 0, 900) : (Number.isFinite(profileBw) ? clamp(profileBw, 0, 900) : NaN);
+      const bwPct = Number.isFinite(bw) ? clamp((bw / 900) * 100, 0, 100) : 0;
 
       const gpuName = String(data.selectedGpu || '').toUpperCase();
       let warpSlots = 64;
@@ -1500,22 +1808,23 @@ DASHBOARD_HTML = """
       else if (gpuName.includes('M40')) warpSlots = 48;
       else if (gpuName.includes('K80')) warpSlots = 32;
 
-      const warps = clamp(Math.round((util / 100) * warpSlots), 1, warpSlots);
+      const warpBasis = Number.isFinite(computeUtil) ? computeUtil : 0;
+      const warps = clamp(Math.round((warpBasis / 100) * warpSlots), 1, warpSlots);
       const warpPct = clamp((warps / warpSlots) * 100, 0, 100);
 
-      setMeter('utilBar', util);
+      setMeter('gpuUtilBar', Number.isFinite(gpuUtil) ? gpuUtil : 0);
+      setMeter('computeUtilBar', Number.isFinite(computeUtil) ? computeUtil : 0);
       setMeter('vramBar', vramPct);
       setMeter('bwBar', bwPct);
       setMeter('warpBar', warpPct);
 
-      document.getElementById('utilValue').textContent = `${util.toFixed(1)}%`;
+      document.getElementById('gpuUtilValue').textContent = Number.isFinite(gpuUtil) ? `${gpuUtil.toFixed(1)}%` : '--';
+      document.getElementById('computeUtilValue').textContent = Number.isFinite(computeUtil) ? `${computeUtil.toFixed(1)}%` : '--';
       document.getElementById('vramValue').textContent = Number.isFinite(vramUsed) ? `${vramUsed.toFixed(1)} / ${totalMem.toFixed(0)} GB` : '--';
       document.getElementById('bwValue').textContent = Number.isFinite(bw) ? `${bw.toFixed(1)} GB/s` : '--';
       document.getElementById('warpValue').textContent = `${warps} / ${warpSlots} warps`;
 
-      const headroom = Math.max(0, 100 - util);
-      const hintLevel = util < 45 ? 'low' : (util < 75 ? 'moderate' : 'high');
-      document.getElementById('resourceHint').textContent = `Current utilization is ${hintLevel} at ${util.toFixed(1)}%. Optimization headroom: ${headroom.toFixed(1)}%.`;
+      document.getElementById('resourceHint').textContent = 'Source: GPEmu profiled data';
 
       const activeModel = data.selectedModel;
       const activeGpu = data.selectedGpu;
@@ -1537,6 +1846,7 @@ DASHBOARD_HTML = """
       const payload = await response.json();
       updateModelInfo(payload.model_info, payload.selected_model);
       document.getElementById('pageTitle').textContent = `GLIDE GPU TASK SCHEDULER SIMULATOR • ${(payload.model_info?.display_name || payload.selected_model || model).toUpperCase()}`;
+      return payload;
     }
 
     async function setGpuSelection(gpu) {
@@ -1548,6 +1858,7 @@ DASHBOARD_HTML = """
       const payload = await response.json();
       updateGpuInfo(payload.gpu_info, payload.selected_gpu);
       document.getElementById('gpuName').textContent = payload.selected_gpu || gpu;
+      return payload;
     }
 
     async function startNewRun() {
@@ -1561,6 +1872,12 @@ DASHBOARD_HTML = """
         const response = await fetch('/api/metrics', { cache: 'no-store' });
         const metrics = await response.json();
         const batches = Array.isArray(metrics.batches) ? metrics.batches : [];
+        console.log('[GLIDE metrics poll]', {
+          selectedGpu: metrics.selected_gpu,
+          selectedModel: metrics.selected_model,
+          gpu_util: metrics.gpu_util,
+          compute_util: metrics.compute_util
+        });
 
         populateSelectors(metrics);
 
@@ -1594,8 +1911,10 @@ DASHBOARD_HTML = """
 
     document.getElementById('modelSelector').addEventListener('change', async (evt) => {
       try {
-        await setModelSelection(evt.target.value);
         resetDashboardState();
+        const payload = await setModelSelection(evt.target.value);
+        applyLookupUtilization(payload);
+        console.log('[GLIDE model change response]', payload);
         await tick();
       } catch (_err) {
       }
@@ -1603,8 +1922,10 @@ DASHBOARD_HTML = """
 
     document.getElementById('gpuSelector').addEventListener('change', async (evt) => {
       try {
-        await setGpuSelection(evt.target.value);
         resetDashboardState();
+        const payload = await setGpuSelection(evt.target.value);
+        applyLookupUtilization(payload);
+        console.log('[GLIDE gpu change response]', payload);
         await tick();
       } catch (_err) {
       }
@@ -1666,7 +1987,7 @@ def _load_selected_model() -> str:
 
 def _save_selected_model(model_key: str) -> str:
   model = _normalize_model(model_key)
-  os.makedirs(GLIDE_DIR, exist_ok=True)
+  _ensure_write_dir()
 
   with open(SELECTED_MODEL_PATH, 'a+', encoding='utf-8') as model_file:
     fcntl.flock(model_file.fileno(), fcntl.LOCK_EX)
@@ -1683,7 +2004,7 @@ def _save_selected_model(model_key: str) -> str:
 
 
 def _clear_metrics_file() -> None:
-  os.makedirs(GLIDE_DIR, exist_ok=True)
+  _ensure_write_dir()
   with open(METRICS_PATH, 'a+', encoding='utf-8') as metrics_file:
     fcntl.flock(metrics_file.fileno(), fcntl.LOCK_EX)
     try:
@@ -1699,6 +2020,7 @@ def _safe_metrics_payload() -> Dict[str, Any]:
   selected_model = _load_selected_model()
   selected_gpu = _load_selected_gpu()
   profile_stats = _get_profile_stats(selected_gpu, selected_model, 32)
+  utilization = get_utilization(selected_gpu, selected_model)
   profiles = _scan_gpu_profiles()
   return {
     'batches': [],
@@ -1720,11 +2042,56 @@ def _safe_metrics_payload() -> Dict[str, Any]:
     'max_compute_time': None,
     'throughput': None,
     'eta_seconds': None,
+    'gpu_util': utilization['gpu_util'],
+    'compute_util': utilization['compute_util'],
     'profile_stats': profile_stats
   }
 
 
 def _load_metrics_file() -> Dict[str, Any]:
+  # Support two formats:
+  # 1) legacy JSON file at METRICS_PATH containing full payload
+  # 2) NDJSON per-batch lines at METRICS_PATH with .ndjson extension
+  ndjson_path = os.path.splitext(METRICS_PATH)[0] + '.ndjson'
+
+  # If NDJSON exists, read per-line batch records and merge with metadata from JSON if present
+  if os.path.exists(ndjson_path):
+    batches = []
+    try:
+      with open(ndjson_path, 'r', encoding='utf-8') as nh:
+        for line in nh:
+          line = line.strip()
+          if not line:
+            continue
+          try:
+            obj = json.loads(line)
+            if isinstance(obj, dict):
+              batches.append(obj)
+          except json.JSONDecodeError:
+            continue
+    except OSError:
+      return _safe_metrics_payload()
+
+    # Base payload: try to read metadata JSON for status/start_time/etc, else safe payload
+    payload = _safe_metrics_payload()
+    if os.path.exists(METRICS_PATH):
+      try:
+        with open(METRICS_PATH, 'r', encoding='utf-8') as metrics_file:
+          raw = metrics_file.read().strip()
+          if raw:
+            try:
+              data = json.loads(raw)
+              if isinstance(data, dict):
+                payload.update({k: v for k, v in data.items() if k != 'batches'})
+            except json.JSONDecodeError:
+              pass
+      except OSError:
+        pass
+
+    payload['batches'] = batches
+    return payload
+
+  # Fallback: legacy JSON file
   if not os.path.exists(METRICS_PATH):
     return _safe_metrics_payload()
 
@@ -1741,21 +2108,42 @@ def _load_metrics_file() -> Dict[str, Any]:
     return _safe_metrics_payload()
 
 
+def get_utilization(gpu: str, model: str, 
+                    times: List[float] = None, 
+                    elapsed: float = 0) -> Dict[str, int]:
+    """
+    Get utilization for a GPU + model combo.
+    Primary: lookup table (real profiled data)
+    Fallback: dynamic calculation from timing
+    """
+    # Primary: use real lookup table
+    gpu_entry = GPU_MODEL_UTILIZATION.get(gpu, {})
+    if model in gpu_entry:
+        return gpu_entry[model]  # {"gpu_util": X, "compute_util": Y}
+    
+    # Fallback: dynamic calculation when profile missing
+    if times and elapsed > 0:
+        total_compute = sum(times)
+        avg_compute = total_compute / len(times)
+        compute_util = min(100, int((avg_compute / 0.15) * 100))
+        gpu_util = min(100, int((total_compute / elapsed) * 100))
+        return {"gpu_util": gpu_util, "compute_util": compute_util}
+    
+    return {"gpu_util": 0, "compute_util": 0}
+
 def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   enriched = _safe_metrics_payload()
   enriched.update(data)
 
-  selected_model = _normalize_model(enriched.get('selected_model'))
-  run_model_raw = enriched.get('model')
-  run_model = _normalize_model(run_model_raw) if run_model_raw else None
-  active_model = run_model or selected_model
+  selected_model = _load_selected_model()
+  selected_gpu = _load_selected_gpu()
+  active_model = _normalize_model(enriched.get('model') or selected_model)
 
   enriched['selected_model'] = selected_model
   enriched['active_model'] = active_model
   enriched['model'] = active_model
   enriched['model_info'] = _model_info(active_model)
 
-  selected_gpu = _normalize_gpu(enriched.get('selected_gpu'))
   enriched['selected_gpu'] = selected_gpu
   enriched['gpu_info'] = _gpu_info(selected_gpu)
 
@@ -1775,12 +2163,15 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   if total_batches == 0:
     if enriched.get('status') not in ('running', 'completed'):
       enriched['status'] = 'waiting'
+    # Use static lookup when no batches
+    utilization = get_utilization(selected_gpu, selected_model)
+    enriched['gpu_util'] = utilization['gpu_util']
+    enriched['compute_util'] = utilization['compute_util']
     return enriched
 
   avg_time = sum(times) / total_batches
   min_time = min(times)
   max_time = max(times)
-  busy_time = sum(times)
 
   start_time = enriched.get('start_time')
   elapsed = None
@@ -1794,10 +2185,6 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   if elapsed and elapsed > 0:
     throughput = total_batches / elapsed
 
-  compute_utilization = None
-  if elapsed and elapsed > 0:
-    compute_utilization = max(0.0, min((busy_time / elapsed) * 100.0, 100.0))
-
   eta_seconds = None
   expected = enriched.get('total_expected_batches')
   try:
@@ -1810,16 +2197,61 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   enriched['avg_compute_time'] = avg_time
   enriched['min_compute_time'] = min_time
   enriched['max_compute_time'] = max_time
-  enriched['compute_busy_time'] = busy_time
-  enriched['compute_utilization'] = compute_utilization
   enriched['throughput'] = throughput
   enriched['eta_seconds'] = eta_seconds
+  
+  # Use dynamic utilization based on actual batch data if available
+  if elapsed and elapsed > 0:
+    utilization = _calculate_dynamic_utilization(times, elapsed, selected_gpu)
+  else:
+    utilization = get_utilization(selected_gpu, selected_model)
+  
+  enriched['gpu_util'] = utilization['gpu_util']
+  enriched['compute_util'] = utilization['compute_util']
+
+  # Derive dynamic VRAM usage and memory bandwidth from profile stats
+  # Scale profile values by recent compute time vs profile compute time
+  batch_size_for_profile = enriched.get('batch_size') or 32
+  profile_stats = _get_profile_stats(selected_gpu, active_model, batch_size_for_profile)
+  enriched['profile_stats'] = profile_stats
+
+  try:
+    profile_compute = float(profile_stats.get('compute_time_s') or 0)
+  except Exception:
+    profile_compute = 0
+
+  # Prefer recent per-batch memory/bandwidth telemetry when available
+  recent_mem_vals = [float(b.get('memory_gb')) for b in batches if isinstance(b, dict) and b.get('memory_gb') is not None]
+  recent_bw_vals = [float(b.get('bandwidth_gbps')) for b in batches if isinstance(b, dict) and b.get('bandwidth_gbps') is not None]
+  if recent_mem_vals:
+    # use the latest reported memory value
+    vram_used = recent_mem_vals[-1]
+  else:
+    if profile_compute > 0 and total_batches > 0:
+      # use average compute time to scale VRAM/BW usage
+      scale = avg_time / profile_compute
+      try:
+        mem_peak = float(profile_stats.get('memory_peak_gb') or 0)
+      except Exception:
+        mem_peak = 0
+      try:
+        bw_peak = float(profile_stats.get('estimated_bandwidth_gbps') or 0)
+      except Exception:
+        bw_peak = 0
+      vram_used = max(0.0, min(mem_peak * scale, mem_peak))
+      bandwidth = max(0.0, bw_peak * scale)
+    else:
+      vram_used = float(profile_stats.get('memory_peak_gb') or 0)
+      bandwidth = float(profile_stats.get('estimated_bandwidth_gbps') or 0)
+
+  if recent_bw_vals:
+    bandwidth = recent_bw_vals[-1]
+
+  enriched['vram_used_gb'] = vram_used
+  enriched['bandwidth_gbps'] = bandwidth
 
   if enriched.get('status') not in ('running', 'completed'):
     enriched['status'] = 'running'
-
-  batch_size_for_profile = enriched.get('batch_size') or 32
-  enriched['profile_stats'] = _get_profile_stats(selected_gpu, active_model, batch_size_for_profile)
 
   return enriched
 
@@ -1839,10 +2271,16 @@ def api_metrics():
 def api_set_model():
   payload = request.get_json(silent=True) or {}
   selected = _save_selected_model(payload.get('model', DEFAULT_MODEL))
+  selected_gpu = _load_selected_gpu()
+  utilization = get_utilization(selected_gpu, selected)
+  print(f"[API set_model] gpu={selected_gpu} model={selected} gpu_util={utilization['gpu_util']} compute_util={utilization['compute_util']}")
   return jsonify({
     'ok': True,
     'selected_model': selected,
-    'model_info': _model_info(selected)
+    'model_info': _model_info(selected),
+    'selected_gpu': selected_gpu,
+    'gpu_util': utilization['gpu_util'],
+    'compute_util': utilization['compute_util']
   })
 
 
@@ -1850,10 +2288,16 @@ def api_set_model():
 def api_set_gpu():
   payload = request.get_json(silent=True) or {}
   selected_gpu = _save_selected_gpu(payload.get('gpu', DEFAULT_GPU))
+  selected_model = _load_selected_model()
+  utilization = get_utilization(selected_gpu, selected_model)
+  print(f"[API set_gpu] gpu={selected_gpu} model={selected_model} gpu_util={utilization['gpu_util']} compute_util={utilization['compute_util']}")
   return jsonify({
     'ok': True,
     'selected_gpu': selected_gpu,
-    'gpu_info': _gpu_info(selected_gpu)
+    'gpu_info': _gpu_info(selected_gpu),
+    'selected_model': selected_model,
+    'gpu_util': utilization['gpu_util'],
+    'compute_util': utilization['compute_util']
   })
 
 
@@ -1862,13 +2306,17 @@ def api_start_new_run():
   _clear_metrics_file()
   selected = _load_selected_model()
   selected_gpu = _load_selected_gpu()
+  utilization = get_utilization(selected_gpu, selected)
+  print(f"[API start_new_run] gpu={selected_gpu} model={selected} gpu_util={utilization['gpu_util']} compute_util={utilization['compute_util']}")
   return jsonify({
     'ok': True,
     'status': 'waiting',
     'selected_model': selected,
     'model_info': _model_info(selected),
     'selected_gpu': selected_gpu,
-    'gpu_info': _gpu_info(selected_gpu)
+    'gpu_info': _gpu_info(selected_gpu),
+    'gpu_util': utilization['gpu_util'],
+    'compute_util': utilization['compute_util']
   })
 
 

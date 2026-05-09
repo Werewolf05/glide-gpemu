@@ -23,6 +23,8 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Subset
+import threading
+import queue
 
 try:
     from gpemu import ComputeTimeEmulator
@@ -96,8 +98,12 @@ parser.add_argument('--gpemu-config', default='/workspace/gpemu/glide/selected_g
 
 best_acc1 = 0
 GLIDE_METRICS_PATH = '/workspace/gpemu/glide/glide_metrics.json'
+GLIDE_NDJSON_PATH = '/workspace/gpemu/glide/glide_metrics.ndjson'
 GLIDE_SELECTED_MODEL_PATH = '/workspace/gpemu/glide/selected_model.json'
 GLIDE_SELECTED_GPU_PATH = '/workspace/gpemu/glide/selected_gpu.json'
+
+# Sampling rate: only measure peak GPU memory every N batches to reduce synchronization overhead
+MEMORY_SAMPLE_EVERY = 4
 
 
 def _load_selected_model(default_model):
@@ -191,25 +197,128 @@ def initialize_glide_metrics(args, total_expected_batches):
         }
 
     _write_metrics_locked(_init)
+    # start background NDJSON writer for fast per-batch writes
+    try:
+        _start_ndjson_writer()
+    except Exception:
+        pass
 
 
-def append_glide_batch_metric(compute_time, batch_index):
+def append_glide_batch_metric(compute_time, batch_index, memory_gb=None, bandwidth_gbps=None):
     timestamp = time.time()
 
     def _append(data):
         batches = data.get('batches')
         if not isinstance(batches, list):
             batches = []
-        batches.append({
+        entry = {
             'batch': int(batch_index),
             'compute_time': float(compute_time),
             'timestamp': float(timestamp)
-        })
+        }
+        if memory_gb is not None:
+            entry['memory_gb'] = float(memory_gb)
+        if bandwidth_gbps is not None:
+            entry['bandwidth_gbps'] = float(bandwidth_gbps)
+        batches.append(entry)
         data['batches'] = batches
         data['status'] = 'running'
         return data
 
     _write_metrics_locked(_append)
+
+
+def append_glide_batch_ndjson(compute_time, batch_index, memory_gb=None, bandwidth_gbps=None):
+    """Append a single-line JSON record to the NDJSON metrics file.
+
+    This is lightweight (no JSON read/parse/write) to avoid per-batch I/O overhead.
+    """
+    entry = {
+        'batch': int(batch_index),
+        'compute_time': float(compute_time),
+        'timestamp': float(time.time())
+    }
+    if memory_gb is not None:
+        entry['memory_gb'] = float(memory_gb)
+    if bandwidth_gbps is not None:
+        entry['bandwidth_gbps'] = float(bandwidth_gbps)
+
+    # Enqueue for background writer if available
+    try:
+        if _ndjson_writer_queue is not None:
+            _ndjson_writer_queue.put(entry)
+            return
+    except NameError:
+        pass
+
+    # Fallback: best-effort direct write
+    try:
+        os.makedirs(os.path.dirname(GLIDE_NDJSON_PATH), exist_ok=True)
+        with open(GLIDE_NDJSON_PATH, 'a', encoding='utf-8') as fh:
+            fh.write(json.dumps(entry, separators=(',', ':')) + '\n')
+            fh.flush()
+    except Exception:
+        pass
+
+
+def _ndjson_writer_loop(path, q, stop_event, flush_interval=1.0):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fh = open(path, 'a', encoding='utf-8')
+    last_flush = time.time()
+    try:
+        while not stop_event.is_set() or not q.empty():
+            try:
+                entry = q.get(timeout=0.25)
+            except queue.Empty:
+                entry = None
+            if entry is not None:
+                try:
+                    fh.write(json.dumps(entry, separators=(',', ':')) + '\n')
+                except Exception:
+                    pass
+            now = time.time()
+            if now - last_flush >= flush_interval:
+                try:
+                    fh.flush()
+                except Exception:
+                    pass
+                last_flush = now
+    finally:
+        try:
+            fh.flush()
+        except Exception:
+            pass
+        try:
+            fh.close()
+        except Exception:
+            pass
+
+
+def _start_ndjson_writer():
+    global _ndjson_writer_queue, _ndjson_writer_thread, _ndjson_writer_stop
+    if globals().get('_ndjson_writer_thread') is not None:
+        return
+    _ndjson_writer_queue = queue.Queue()
+    _ndjson_writer_stop = threading.Event()
+    _ndjson_writer_thread = threading.Thread(target=_ndjson_writer_loop, args=(GLIDE_NDJSON_PATH, _ndjson_writer_queue, _ndjson_writer_stop), daemon=True)
+    _ndjson_writer_thread.start()
+
+
+def _stop_ndjson_writer():
+    global _ndjson_writer_queue, _ndjson_writer_thread, _ndjson_writer_stop
+    if globals().get('_ndjson_writer_thread') is None:
+        return
+    try:
+        _ndjson_writer_stop.set()
+    except Exception:
+        pass
+    try:
+        _ndjson_writer_thread.join(timeout=2.0)
+    except Exception:
+        pass
+    _ndjson_writer_thread = None
+    _ndjson_writer_queue = None
+    _ndjson_writer_stop = None
 
 
 def finalize_glide_metrics():
@@ -219,6 +328,11 @@ def finalize_glide_metrics():
         return data
 
     _write_metrics_locked(_finalize)
+    # stop background NDJSON writer and flush
+    try:
+        _stop_ndjson_writer()
+    except Exception:
+        pass
 
 
 def main():
@@ -392,6 +506,16 @@ def main_worker(gpu, ngpus_per_node, args):
 
     metrics_writer_enabled = (not args.distributed) or args.rank in (-1, 0)
 
+    # In containers with small /dev/shm, multiprocessing DataLoader workers can
+    # crash with bus errors, especially on CPU + dummy-data debug runs.
+    loader_workers = args.workers
+    running_in_container = os.path.exists('/.dockerenv')
+    if loader_workers > 0 and running_in_container and (args.dummy or not torch.cuda.is_available()):
+        print(f"[DataLoader] Reducing workers from {loader_workers} to 0 to avoid /dev/shm bus errors in container mode")
+        loader_workers = 0
+
+    pin_memory = torch.cuda.is_available()
+
     # Data loading code
     if args.dummy:
         print("=> Dummy data is used!")
@@ -430,11 +554,11 @@ def main_worker(gpu, ngpus_per_node, args):
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
-        num_workers=args.workers, pin_memory=True, sampler=train_sampler)
+        num_workers=loader_workers, pin_memory=pin_memory, sampler=train_sampler)
 
     val_loader = torch.utils.data.DataLoader(
         val_dataset, batch_size=args.batch_size, shuffle=False,
-        num_workers=args.workers, pin_memory=True, sampler=val_sampler)
+        num_workers=loader_workers, pin_memory=pin_memory, sampler=val_sampler)
 
     compute_emulator = None
     if args.gpemu_enable and ComputeTimeEmulator is not None:
@@ -513,8 +637,12 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args, metric
         data_time.update(time.time() - end)
 
         # move data to the same device as model
+        transfer_start = time.time()
         images = images.to(device, non_blocking=False)
         target = target.to(device, non_blocking=False)
+        # avoid synchronizing here to reduce blocking; transfer_time is approximate
+        transfer_end = time.time()
+        transfer_time = max(0.0, transfer_end - transfer_start)
 
         # if torch.cuda.is_available():
         #     torch.cuda.synchronize()
@@ -522,6 +650,9 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args, metric
 
         # compute output
         output = model(images)
+        # Handle GoogLeNet's special output format (GoogLeNetOutputs named tuple)
+        if hasattr(output, 'logits'):
+            output = output.logits
         loss = criterion(output, target)
 
         # measure accuracy and record loss
@@ -562,7 +693,35 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args, metric
 
         if metrics_writer_enabled:
             batch_index = (epoch * len(train_loader)) + i
-            append_glide_batch_metric(compute_time, batch_index)
+            # estimate bandwidth based on input tensor size and measured transfer time
+            bandwidth_gbps = None
+            try:
+                bsz = images.size(0)
+                input_bytes = max(1, int(bsz)) * 3 * 224 * 224 * 4
+                if transfer_time and transfer_time > 0:
+                    bandwidth_gbps = input_bytes / transfer_time / 1_000_000_000
+            except Exception:
+                bandwidth_gbps = None
+
+            # capture GPU peak memory periodically to reduce overhead
+            memory_gb = None
+            try:
+                if torch.cuda.is_available() and (i % MEMORY_SAMPLE_EVERY == 0):
+                    try:
+                        torch.cuda.synchronize()
+                    except Exception:
+                        pass
+                    peak_bytes = torch.cuda.max_memory_allocated()
+                    memory_gb = float(peak_bytes) / (1024.0 ** 3)
+                    try:
+                        torch.cuda.reset_peak_memory_stats()
+                    except Exception:
+                        pass
+            except Exception:
+                memory_gb = None
+
+            # Write lightweight per-batch NDJSON (fast) and keep JSON metadata at run boundaries
+            append_glide_batch_ndjson(compute_time, batch_index, memory_gb=memory_gb, bandwidth_gbps=bandwidth_gbps)
 
         # if i % args.print_freq == 0:
         #     progress.display(i + 1)
@@ -585,6 +744,9 @@ def validate(val_loader, model, criterion, args):
 
                 # compute output
                 output = model(images)
+                # Handle GoogLeNet's special output format (GoogLeNetOutputs named tuple)
+                if hasattr(output, 'logits'):
+                    output = output.logits
                 loss = criterion(output, target)
 
                 # measure accuracy and record loss
@@ -622,7 +784,7 @@ def validate(val_loader, model, criterion, args):
                                  range(len(val_loader.sampler) * args.world_size, len(val_loader.dataset)))
         aux_val_loader = torch.utils.data.DataLoader(
             aux_val_dataset, batch_size=args.batch_size, shuffle=False,
-            num_workers=args.workers, pin_memory=True)
+            num_workers=loader_workers, pin_memory=pin_memory)
         run_validate(aux_val_loader, len(val_loader))
 
     progress.display_summary()

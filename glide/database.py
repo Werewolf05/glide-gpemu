@@ -8,7 +8,6 @@ layer type and configuration.
 import json
 import os
 import sqlite3
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 
@@ -112,6 +111,15 @@ def query_layer_cost(
     if row:
         return {'compute_cost_ms': row[0], 'memory_cost_mb': row[1]}
     return None
+
+
+def get_layer_cost(
+    layer_type: str,
+    config: Dict[str, Any],
+    db_path: str = LAYER_DB_PATH,
+) -> Optional[Dict[str, Any]]:
+    """Backward-compatible alias for query_layer_cost."""
+    return query_layer_cost(layer_type, config, db_path)
 
 
 def get_slowest_layers(
