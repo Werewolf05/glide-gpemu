@@ -570,6 +570,52 @@ def _save_selected_gpu(gpu_name: str) -> str:
 
 app = Flask(__name__)
 
+# Try to import the engine and database helpers so the dashboard can expose
+# live engine state and recent profiler results. If imports fail, fall back
+# to None so endpoints can return a sensible error.
+try:
+  from glide.engine import InferenceEngine  # type: ignore
+  ENGINE = InferenceEngine()
+except Exception:
+  ENGINE = None
+
+try:
+  from glide import database as _database  # type: ignore
+except Exception:
+  _database = None
+
+
+def _render_dashboard_page(page: str = 'overview') -> str:
+  page_name = page if page in {'overview', 'engine', 'profiler'} else 'overview'
+  page_titles = {
+    'overview': 'Overview',
+    'engine': 'Engine',
+    'profiler': 'Profiler',
+  }
+  page_descriptions = {
+    'overview': 'Unified dashboard for live metrics, queue state, and profiler data.',
+    'engine': 'Focused view for inference queue status and completed request results.',
+    'profiler': 'Focused view for layer timing results and the slowest profiled layers.',
+  }
+  html = DASHBOARD_HTML.replace('data-page="overview"', f'data-page="{page_name}"', 1)
+  html = html.replace('GLIDE GPU TASK SCHEDULER SIMULATOR • RESNET18', f'GLIDE {page_titles[page_name].upper()} VIEW • RESNET18', 1)
+  html = html.replace('Awaiting run metadata...', page_descriptions[page_name], 1)
+  html = html.replace(
+    '<div class="page-summary-title" id="pageSummaryTitle">Overview</div>',
+    f'<div class="page-summary-title" id="pageSummaryTitle">{page_titles[page_name]} Page</div>',
+    1,
+  )
+  html = html.replace(
+    '<div class="page-summary-body" id="pageSummaryBody">Use the page links above to switch between the overview, engine, and profiler views.</div>',
+    f'<div class="page-summary-body" id="pageSummaryBody">{page_descriptions[page_name]}</div>',
+    1,
+  )
+  if page_name == 'engine':
+    html = html.replace('body[data-page="engine"] .sim-grid {\n      grid-template-columns: 300px minmax(0, 1fr);\n    }', 'body[data-page="engine"] .sim-grid {\n      grid-template-columns: 1fr;\n    }', 1)
+  if page_name == 'profiler':
+    html = html.replace('body[data-page="profiler"] .sim-grid {\n      grid-template-columns: minmax(0, 1fr);\n    }', 'body[data-page="profiler"] .sim-grid {\n      grid-template-columns: minmax(0, 1fr);\n    }', 1)
+  return html
+
 
 DASHBOARD_HTML = """
 <!DOCTYPE html>
@@ -682,6 +728,41 @@ DASHBOARD_HTML = """
       background: var(--neon);
       box-shadow: 0 0 12px var(--neon);
       animation: none;
+    }
+
+    .page-nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .page-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      text-decoration: none;
+      background: rgba(9, 14, 27, 0.72);
+      transition: color 160ms ease, background 160ms ease, transform 160ms ease;
+    }
+
+    .page-link:hover {
+      color: var(--text);
+      background: rgba(43, 228, 255, 0.12);
+      transform: translateY(-1px);
+    }
+
+    body[data-page="overview"] .page-link[href="/"] ,
+    body[data-page="engine"] .page-link[href="/engine"] ,
+    body[data-page="profiler"] .page-link[href="/profiler"] {
+      color: var(--text);
+      border-color: rgba(43, 228, 255, 0.45);
+      background: rgba(43, 228, 255, 0.16);
     }
 
     .info-panel {
@@ -935,6 +1016,165 @@ DASHBOARD_HTML = """
       display: grid;
       grid-template-columns: 300px minmax(0, 1fr) 320px;
       gap: 12px;
+    }
+
+    .page-summary {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 12px;
+      margin-bottom: 14px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
+    }
+
+    .page-summary-title {
+      font-family: 'Rajdhani', sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--neon);
+      margin-bottom: 6px;
+    }
+
+    .page-summary-body {
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .page-summary-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 0.82rem;
+    }
+
+    .page-summary-table th,
+    .page-summary-table td {
+      border-bottom: 1px solid rgba(149, 174, 208, 0.18);
+      padding: 6px 4px;
+      text-align: left;
+    }
+
+    .page-summary-table th {
+      color: var(--text);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .page-section {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 12px;
+      margin-bottom: 14px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
+    }
+
+    .page-section-title {
+      font-family: 'Rajdhani', sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--neon);
+      margin-bottom: 10px;
+    }
+
+    .page-section-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .page-section-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(7, 13, 27, 0.9);
+      padding: 10px;
+    }
+
+    .page-section-label {
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      margin-bottom: 6px;
+    }
+
+    .page-section-value {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1.4rem;
+      font-weight: 700;
+    }
+
+    .page-section-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 0.82rem;
+    }
+
+    .page-section-table th,
+    .page-section-table td {
+      border-bottom: 1px solid rgba(149, 174, 208, 0.18);
+      padding: 6px 4px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .page-section-table th {
+      color: var(--text);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    #enginePageSection {
+      display: none;
+    }
+
+    #profilerPageSection {
+      display: none;
+    }
+
+    body[data-page="engine"] #enginePageSection {
+      display: block;
+    }
+
+    body[data-page="profiler"] #profilerPageSection {
+      display: block;
+    }
+
+    body[data-page="engine"] .info-panel,
+    body[data-page="profiler"] .info-panel,
+    body[data-page="engine"] .control-grid > .model-info,
+    body[data-page="engine"] .control-grid > .gpu-info,
+    body[data-page="profiler"] .control-grid > .model-info,
+    body[data-page="profiler"] .control-grid > .gpu-info {
+      display: none;
+    }
+
+    body[data-page="engine"] .control-grid,
+    body[data-page="engine"] .stats-bar,
+    body[data-page="engine"] .now-strip,
+    body[data-page="engine"] .sim-grid,
+    body[data-page="profiler"] .control-grid,
+    body[data-page="profiler"] .stats-bar,
+    body[data-page="profiler"] .now-strip,
+    body[data-page="profiler"] .sim-grid {
+      display: none;
+    }
+
+    body[data-page="engine"] .sim-grid {
+      grid-template-columns: 300px minmax(0, 1fr);
+    }
+
+    body[data-page="engine"] .sim-grid > .panel:nth-child(3),
+    body[data-page="profiler"] .sim-grid > .panel:nth-child(1),
+    body[data-page="profiler"] .sim-grid > .panel:nth-child(2) {
+      display: none;
+    }
+
+    body[data-page="profiler"] .sim-grid {
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .panel-title {
@@ -1231,12 +1471,17 @@ DASHBOARD_HTML = """
     }
   </style>
 </head>
-<body>
+<body data-page="overview">
   <div class="shell">
     <div class="topbar">
       <div>
         <div class="title" id="pageTitle">GLIDE GPU TASK SCHEDULER SIMULATOR • RESNET18</div>
         <div class="subtitle" id="meta">Awaiting run metadata...</div>
+        <div class="page-nav">
+          <a class="page-link" href="/">Overview</a>
+          <a class="page-link" href="/engine">Engine</a>
+          <a class="page-link" href="/profiler">Profiler</a>
+        </div>
       </div>
       <div class="status waiting" id="statusBadge"><span class="dot"></span><span id="statusText">WAITING FOR DATA...</span></div>
     </div>
@@ -1336,6 +1581,75 @@ DASHBOARD_HTML = """
       <div class="now-meta" id="nowExecMeta">State: waiting | Source: profiled timing + measured runtime events</div>
     </div>
 
+    <div class="page-summary" id="pageSummary">
+      <div class="page-summary-title" id="pageSummaryTitle">Overview</div>
+      <div class="page-summary-body" id="pageSummaryBody">Use the page links above to switch between the overview, engine, and profiler views.</div>
+    </div>
+
+    <div class="page-section" id="enginePageSection">
+      <div class="page-section-title">Engine View</div>
+      <div class="page-section-grid">
+        <div class="page-section-card">
+          <div class="page-section-label">Queue Length</div>
+          <div class="page-section-value" id="engineQueueLength">--</div>
+        </div>
+        <div class="page-section-card">
+          <div class="page-section-label">Completed Requests</div>
+          <div class="page-section-value" id="engineCompletedCount">--</div>
+        </div>
+        <div class="page-section-card">
+          <div class="page-section-label">Avg Latency</div>
+          <div class="page-section-value" id="engineAvgLatency">--</div>
+        </div>
+      </div>
+      <table class="page-section-table" id="engineResultsTable">
+        <thead>
+          <tr>
+            <th>Request</th>
+            <th>Model</th>
+            <th>Batch</th>
+            <th>Latency</th>
+            <th>Compute</th>
+            <th>Memory</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="6">No engine results loaded yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="page-section" id="profilerPageSection">
+      <div class="page-section-title">Profiler View</div>
+      <div class="page-section-grid">
+        <div class="page-section-card">
+          <div class="page-section-label">Slowest Layer</div>
+          <div class="page-section-value" id="profilerSlowestLayer">--</div>
+        </div>
+        <div class="page-section-card">
+          <div class="page-section-label">Slowest Compute</div>
+          <div class="page-section-value" id="profilerSlowestCompute">--</div>
+        </div>
+        <div class="page-section-card">
+          <div class="page-section-label">Layer Count</div>
+          <div class="page-section-value" id="profilerLayerCount">--</div>
+        </div>
+      </div>
+      <table class="page-section-table" id="profilerResultsTable">
+        <thead>
+          <tr>
+            <th>Layer</th>
+            <th>Compute</th>
+            <th>Memory</th>
+            <th>Config</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="4">No profiler results loaded yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
     <div class="sim-grid">
       <div class="panel">
         <div class="panel-title">Task Queue Panel <span class="src-badge measured">MEASURED</span></div>
@@ -1402,6 +1716,7 @@ DASHBOARD_HTML = """
     let refreshMs = 1000;
     let refreshTimer = null;
     let queueDepthHistory = [];
+    const pageMode = (document.body?.dataset?.page || 'overview').toLowerCase();
 
     function formatSeconds(sec) {
       if (!Number.isFinite(sec)) return '--';
@@ -1457,6 +1772,114 @@ DASHBOARD_HTML = """
         clearInterval(refreshTimer);
       }
       refreshTimer = setInterval(tick, refreshMs);
+    }
+
+    function renderPageSummary(metrics, engineData, profilerData) {
+      const title = document.getElementById('pageSummaryTitle');
+      const body = document.getElementById('pageSummaryBody');
+      const engineSection = document.getElementById('enginePageSection');
+      const profilerSection = document.getElementById('profilerPageSection');
+      if (!title || !body) return;
+
+      if (engineSection) engineSection.style.display = pageMode === 'engine' ? 'block' : 'none';
+      if (profilerSection) profilerSection.style.display = pageMode === 'profiler' ? 'block' : 'none';
+
+      if (pageMode === 'engine') {
+        const status = engineData?.status || {};
+        title.textContent = 'Engine Page';
+        body.innerHTML = `Queue length ${Number(status.queue_length) || 0}, completed ${Number(status.completed_count) || 0}, average latency ${Number(status.avg_latency_ms || 0).toFixed(2)} ms.`;
+        renderEnginePage(engineData);
+        return;
+      }
+
+      if (pageMode === 'profiler') {
+        const rows = Array.isArray(profilerData?.slowest_layers) ? profilerData.slowest_layers : [];
+        title.textContent = 'Profiler Page';
+        if (rows.length === 0) {
+          body.innerHTML = 'No layer timing data is currently available. Run the profiler to populate the database.';
+          renderProfilerPage(profilerData);
+          return;
+        }
+        const tableRows = rows.slice(0, 5).map((row) => {
+          const config = row.config || {};
+          const name = row.layer_type || 'Unknown';
+          const ms = Number(row.compute_cost_ms || 0).toFixed(2);
+          const details = Object.keys(config).length > 0 ? JSON.stringify(config) : '-';
+          return `<tr><td>${name}</td><td>${ms} ms</td><td>${details}</td></tr>`;
+        }).join('');
+        body.innerHTML = `<div>Top timed layers from the profiler database.</div><table class="page-summary-table"><thead><tr><th>Layer</th><th>Compute</th><th>Config</th></tr></thead><tbody>${tableRows}</tbody></table>`;
+        renderProfilerPage(profilerData);
+        return;
+      }
+
+      const selectedModel = metrics.selected_model || 'resnet18';
+      const selectedGpu = metrics.selected_gpu || 'Tesla_M40';
+      title.textContent = 'Overview Page';
+      body.innerHTML = `Unified dashboard for ${selectedModel.toUpperCase()} on ${selectedGpu}. Use the Engine and Profiler pages for focused views.`;
+      if (engineSection) engineSection.style.display = 'none';
+      if (profilerSection) profilerSection.style.display = 'none';
+    }
+
+    function renderEnginePage(engineData) {
+      const status = engineData?.status || {};
+      const results = Array.isArray(engineData?.results) ? engineData.results : [];
+      document.getElementById('engineQueueLength').textContent = Number(status.queue_length) || 0;
+      document.getElementById('engineCompletedCount').textContent = Number(status.completed_count) || 0;
+      document.getElementById('engineAvgLatency').textContent = Number.isFinite(Number(status.avg_latency_ms)) ? `${Number(status.avg_latency_ms).toFixed(2)} ms` : '--';
+
+      const tbody = document.querySelector('#engineResultsTable tbody');
+      if (!tbody) return;
+      if (results.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6">No completed inference requests yet.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = results.slice(-12).reverse().map((item) => {
+        const latency = Number(item.latency_ms);
+        const compute = Number(item.emulated_compute_ms);
+        const memory = Number(item.memory_mb);
+        return `
+          <tr>
+            <td>${item.request_id || '-'}</td>
+            <td>${item.model_name || '-'}</td>
+            <td>${Number(item.batch_size) || '-'}</td>
+            <td>${Number.isFinite(latency) ? latency.toFixed(2) + ' ms' : '--'}</td>
+            <td>${Number.isFinite(compute) ? compute.toFixed(2) + ' ms' : '--'}</td>
+            <td>${Number.isFinite(memory) ? memory.toFixed(1) + ' MB' : '--'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderProfilerPage(profilerData) {
+      const rows = Array.isArray(profilerData?.slowest_layers) ? profilerData.slowest_layers : [];
+      document.getElementById('profilerLayerCount').textContent = rows.length;
+
+      if (rows.length === 0) {
+        document.getElementById('profilerSlowestLayer').textContent = '--';
+        document.getElementById('profilerSlowestCompute').textContent = '--';
+        const tbody = document.querySelector('#profilerResultsTable tbody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="4">No profiler results loaded yet.</td></tr>';
+        return;
+      }
+
+      const slowest = rows[0];
+      document.getElementById('profilerSlowestLayer').textContent = slowest.layer_type || '-';
+      document.getElementById('profilerSlowestCompute').textContent = Number.isFinite(Number(slowest.compute_cost_ms)) ? `${Number(slowest.compute_cost_ms).toFixed(2)} ms` : '--';
+
+      const tbody = document.querySelector('#profilerResultsTable tbody');
+      if (!tbody) return;
+      tbody.innerHTML = rows.slice(0, 12).map((item) => {
+        const config = item.config ? JSON.stringify(item.config) : '-';
+        return `
+          <tr>
+            <td>${item.layer_type || '-'}</td>
+            <td>${Number.isFinite(Number(item.compute_cost_ms)) ? Number(item.compute_cost_ms).toFixed(2) + ' ms' : '--'}</td>
+            <td>${Number.isFinite(Number(item.memory_cost_mb)) ? Number(item.memory_cost_mb).toFixed(2) + ' MB' : '--'}</td>
+            <td>${config}</td>
+          </tr>
+        `;
+      }).join('');
     }
 
     function renderEventLog(metrics) {
@@ -1900,6 +2323,61 @@ DASHBOARD_HTML = """
         renderNowExecuting(metrics);
         renderResources(metrics);
         renderEventLog(metrics);
+
+        const needsEngine = pageMode === 'overview' || pageMode === 'engine';
+        const needsProfiler = pageMode === 'overview' || pageMode === 'profiler';
+
+        let engineData = null;
+        if (needsEngine) {
+          try {
+            const engResp = await fetch('/api/engine/status', { cache: 'no-store' });
+            if (engResp.ok) {
+              engineData = await engResp.json();
+              if (engineData && engineData.ok && engineData.status && pageMode === 'overview') {
+                const completed = Number(engineData.status.completed_count) || 0;
+                document.getElementById('doneTop').textContent = `${completed}`;
+                const qlen = Number(engineData.status.queue_length) || 0;
+                const metaEl = document.getElementById('nowExecMeta');
+                if (metaEl) {
+                  metaEl.textContent = `${metaEl.textContent.split(' | Engine q:')[0]} | Engine q:${qlen}`;
+                }
+              }
+              const resultsResp = await fetch('/api/engine/results', { cache: 'no-store' });
+              if (resultsResp.ok) {
+                const resultsData = await resultsResp.json();
+                if (resultsData && resultsData.ok) {
+                  engineData.results = resultsData.results || [];
+                }
+              }
+            }
+          } catch (_e) {
+            engineData = null;
+          }
+        }
+
+        let profilerData = null;
+        if (needsProfiler) {
+          try {
+            const profResp = await fetch('/api/profiler/latest', { cache: 'no-store' });
+            if (profResp.ok) {
+              profilerData = await profResp.json();
+              if (profilerData && profilerData.ok && Array.isArray(profilerData.slowest_layers) && pageMode === 'overview') {
+                const box = document.getElementById('eventLog');
+                if (box) {
+                  const slowHtml = profilerData.slowest_layers.slice(0, 5).map((l, idx) => {
+                    const ms = Number(l.compute_cost_ms || 0).toFixed(2);
+                    return `<div class="log-entry slow">Layer ${idx + 1}: ${l.layer_type} — ${ms} ms</div>`;
+                  }).join('');
+                  box.innerHTML = slowHtml + box.innerHTML;
+                }
+              }
+            }
+          } catch (_e) {
+            profilerData = null;
+          }
+        }
+
+        renderPageSummary(metrics, engineData, profilerData);
       } catch (_err) {
         setStatus('waiting', false);
       }
@@ -1938,6 +2416,7 @@ DASHBOARD_HTML = """
       }
     });
 
+    document.body.setAttribute('data-page', pageMode || 'overview');
     tick();
     restartTicker();
   </script>
@@ -2200,9 +2679,9 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   enriched['throughput'] = throughput
   enriched['eta_seconds'] = eta_seconds
   
-  # Use dynamic utilization based on actual batch data if available
+  # Use dynamic utilization based on actual batch data if available.
   if elapsed and elapsed > 0:
-    utilization = _calculate_dynamic_utilization(times, elapsed, selected_gpu)
+    utilization = get_utilization(selected_gpu, selected_model, times=times, elapsed=elapsed)
   else:
     utilization = get_utilization(selected_gpu, selected_model)
   
@@ -2258,7 +2737,17 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.route('/')
 def dashboard() -> str:
-  return render_template_string(DASHBOARD_HTML)
+  return render_template_string(_render_dashboard_page('overview'))
+
+
+@app.route('/engine')
+def engine_dashboard() -> str:
+  return render_template_string(_render_dashboard_page('engine'))
+
+
+@app.route('/profiler')
+def profiler_dashboard() -> str:
+  return render_template_string(_render_dashboard_page('profiler'))
 
 
 @app.route('/api/metrics')
@@ -2318,6 +2807,32 @@ def api_start_new_run():
     'gpu_util': utilization['gpu_util'],
     'compute_util': utilization['compute_util']
   })
+
+
+@app.route('/api/engine/status')
+def api_engine_status():
+  """Return a compact view of the running engine state."""
+  if ENGINE is None:
+    return jsonify({'ok': False, 'error': 'engine_unavailable'}), 503
+  status = ENGINE.get_queue_status()
+  return jsonify({'ok': True, 'selected_gpu': ENGINE.gpu, 'selected_model': ENGINE.model, 'status': status})
+
+
+@app.route('/api/engine/results')
+def api_engine_results():
+  """Return completed request results from the engine."""
+  if ENGINE is None:
+    return jsonify({'ok': False, 'error': 'engine_unavailable'}), 503
+  return jsonify({'ok': True, 'results': ENGINE.get_results()})
+
+
+@app.route('/api/profiler/latest')
+def api_profiler_latest():
+  """Return the slowest layers from the profiler database (if present)."""
+  if _database is None:
+    return jsonify({'ok': False, 'error': 'database_unavailable'}), 503
+  slowest = _database.get_slowest_layers(limit=10)
+  return jsonify({'ok': True, 'slowest_layers': slowest})
 
 
 if __name__ == '__main__':
