@@ -1,1 +1,1 @@
-{"gpu": "NVIDIA_A100-SXM4-40GB", "profile_path": "/workspace/gpemu/profiled_data/time/compute/forward/NVIDIA_A100-SXM4-40GB", "database_path": "/workspace/gpemu/profiled_data", "updated_at": 1778515221.9165483}
+{"gpu": "Tesla_M40", "profile_path": "/workspace/gpemu/profiled_data/time/compute/forward/Tesla_M40", "database_path": "/workspace/gpemu/profiled_data", "updated_at": 1778521285.3918834}

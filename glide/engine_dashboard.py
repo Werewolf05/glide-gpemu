@@ -7,20 +7,32 @@ Displays queue status, completed requests, and latency analysis.
 
 import json
 import os
-from flask import Flask, jsonify, render_template_string
+import time
+from flask import Flask, jsonify, render_template_string, Response, request
 from typing import Dict, Any, Optional
 
 # Import engine for live status
+ENGINE_INIT_ERROR = None
+get_profiled_compute_time = None
+get_profiled_memory = None
 try:
-    from glide.engine import InferenceEngine
+    from glide.engine import InferenceEngine, get_profiled_compute_time, get_profiled_memory
     ENGINE = InferenceEngine()
-except Exception:
+except Exception as exc_primary:
+  # Support running this file either from repository root or from the glide directory.
+  try:
+    from engine import InferenceEngine, get_profiled_compute_time, get_profiled_memory  # type: ignore
+    ENGINE = InferenceEngine()
+  except Exception as exc_fallback:
     ENGINE = None
+    ENGINE_INIT_ERROR = f"primary={type(exc_primary).__name__}: {exc_primary}; fallback={type(exc_fallback).__name__}: {exc_fallback}"
 
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False
 
 GLIDE_DIR = os.path.dirname(os.path.abspath(__file__))
+GPEMU_ROOT = os.path.dirname(GLIDE_DIR)
+PROFILED_DATA_ROOT = os.path.join(GPEMU_ROOT, 'profiled_data', 'time', 'compute', 'forward')
 SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
 SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
 
@@ -45,6 +57,85 @@ def _load_selected_model() -> str:
             return data.get('model', 'resnet18') if isinstance(data, dict) else 'resnet18'
     except (OSError, json.JSONDecodeError):
         return 'resnet18'
+
+
+def _list_available_gpus() -> list:
+    if not os.path.isdir(PROFILED_DATA_ROOT):
+        return []
+    gpus = []
+    for name in sorted(os.listdir(PROFILED_DATA_ROOT)):
+        full_path = os.path.join(PROFILED_DATA_ROOT, name)
+        if os.path.isdir(full_path):
+            gpus.append(name)
+    return gpus
+
+
+def _list_models_for_gpu(gpu: str) -> list:
+    if not gpu:
+        return []
+    gpu_path = os.path.join(PROFILED_DATA_ROOT, gpu)
+    if not os.path.isdir(gpu_path):
+        return []
+    result = []
+    for name in sorted(os.listdir(gpu_path)):
+        model_path = os.path.join(gpu_path, name)
+        if os.path.isdir(model_path):
+            result.append(name)
+    return result
+
+
+def _save_json_field(file_path: str, field: str, value: str) -> None:
+    payload: Dict[str, Any] = {}
+
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, 'r') as file_handle:
+                loaded = json.load(file_handle)
+                if isinstance(loaded, dict):
+                    payload = loaded
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+
+    payload[field] = value
+    payload['updated_at'] = time.time()
+
+    if field == 'gpu':
+        payload['profile_path'] = os.path.join(PROFILED_DATA_ROOT, value)
+        payload.setdefault('database_path', os.path.join(GPEMU_ROOT, 'profiled_data'))
+
+    with open(file_path, 'w') as file_handle:
+        json.dump(payload, file_handle)
+
+    payload[field] = value
+    payload['updated_at'] = time.time()
+
+    if field == 'gpu':
+      payload['profile_path'] = os.path.join(PROFILED_DATA_ROOT, value)
+      payload.setdefault('database_path', os.path.join(GPEMU_ROOT, 'profiled_data'))
+
+    with open(file_path, 'w') as file_handle:
+      json.dump(payload, file_handle)
+
+
+def _build_gpu_coverage(model: str, batch_size: int = 32) -> list:
+    if get_profiled_compute_time is None or get_profiled_memory is None:
+        return []
+
+    rows = []
+    for gpu in _list_available_gpus():
+        compute_ms = get_profiled_compute_time(gpu, model, batch_size)
+        memory_mb = get_profiled_memory(gpu, model, batch_size)
+        if compute_ms is None and memory_mb is None:
+            continue
+        rows.append(
+            {
+                'gpu': gpu,
+                'compute_ms': round(compute_ms, 3) if compute_ms is not None else None,
+                'memory_mb': round(memory_mb, 3) if memory_mb is not None else None,
+            }
+        )
+    rows.sort(key=lambda item: item['compute_ms'] if item['compute_ms'] is not None else float('inf'))
+    return rows
 
 
 ENGINE_DASHBOARD_HTML = """
@@ -264,6 +355,38 @@ ENGINE_DASHBOARD_HTML = """
       color: #2c3e50;
       font-family: 'IBM Plex Mono', monospace;
     }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+      margin-top: 18px;
+    }
+
+    .controls label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #2c3e50;
+    }
+
+    .controls select,
+    .controls button {
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #d5dbe3;
+      background: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+    }
+
+    .controls button {
+      background: #2c3e50;
+      color: #fff;
+      border-color: #2c3e50;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -284,6 +407,13 @@ ENGINE_DASHBOARD_HTML = """
           <span class="metadata-label">Status:</span>
           <span class="status-badge" id="statusBadge">Ready</span>
         </div>
+      </div>
+      <div class="controls">
+        <label for="gpuSelect">GPU</label>
+        <select id="gpuSelect"></select>
+        <label for="modelSelect">Model</label>
+        <select id="modelSelect"></select>
+        <button id="applyConfigBtn" type="button">Apply</button>
       </div>
     </header>
 
@@ -325,6 +455,26 @@ ENGINE_DASHBOARD_HTML = """
     </div>
 
     <div class="section">
+      <div class="section-title">Profiled Coverage Across GPUs (Batch 32)</div>
+      <table id="coverageTable">
+        <thead>
+          <tr>
+            <th>GPU</th>
+            <th>Profiled Compute (ms)</th>
+            <th>Profiled Memory (MB)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td colspan="3" class="empty-state">
+              <p>No profiled coverage data found for current model.</p>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
       <div class="section-title">Recent Completed Requests</div>
       <table id="resultsTable">
         <thead>
@@ -355,29 +505,104 @@ ENGINE_DASHBOARD_HTML = """
   </div>
 
   <script>
+    async function loadOptions() {
+      const resp = await fetch('/api/engine/options');
+      if (!resp.ok) throw new Error('Failed to load engine options');
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error || 'Engine options unavailable');
+
+      const gpuSelect = document.getElementById('gpuSelect');
+      const modelSelect = document.getElementById('modelSelect');
+
+      gpuSelect.innerHTML = (data.gpus || []).map(g => `<option value="${g}">${g}</option>`).join('');
+      gpuSelect.value = data.selected?.gpu || '';
+
+      const models = data.models_by_gpu?.[gpuSelect.value] || [];
+      modelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+      if (models.includes(data.selected?.model)) {
+        modelSelect.value = data.selected.model;
+      }
+    }
+
+    async function applyConfig() {
+      const gpu = document.getElementById('gpuSelect').value;
+      const model = document.getElementById('modelSelect').value;
+      const resp = await fetch('/api/engine/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gpu, model })
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to apply engine config');
+      }
+      document.getElementById('statusBadge').textContent = 'Ready';
+      document.getElementById('statusBadge').title = 'Configuration updated';
+      await updateDashboard();
+    }
+
+    function bindControls() {
+      document.getElementById('gpuSelect').addEventListener('change', async () => {
+        const gpu = document.getElementById('gpuSelect').value;
+        const resp = await fetch('/api/engine/options');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!data.ok) return;
+        const modelSelect = document.getElementById('modelSelect');
+        const models = data.models_by_gpu?.[gpu] || [];
+        modelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+      });
+      document.getElementById('applyConfigBtn').addEventListener('click', async () => {
+        try {
+          await applyConfig();
+        } catch (err) {
+          document.getElementById('statusBadge').textContent = 'Error';
+          document.getElementById('statusBadge').title = (err && err.message) ? err.message : 'Configuration failed';
+        }
+      });
+    }
+
     async function updateDashboard() {
       try {
         // Get engine status
         const statusResp = await fetch('/api/engine/status');
-        if (!statusResp.ok) throw new Error('Status unavailable');
         const status = await statusResp.json();
+        if (!statusResp.ok) {
+          throw new Error(status.error || 'Status unavailable');
+        }
 
         if (!status.ok) {
           document.getElementById('queueLength').textContent = '--';
           document.getElementById('completedCount').textContent = '--';
+          document.getElementById('statusBadge').textContent = 'Unavailable';
+          if (status.error) {
+            document.getElementById('statusBadge').title = status.error;
+          }
           return;
         }
 
         const data = status.status || {};
+        const baseline = status.profiled_baseline || {};
+        const selected = status.selected || {};
+        document.getElementById('modelName').textContent = selected.model || 'unknown';
+        document.getElementById('gpuName').textContent = selected.gpu || 'unknown';
+
+        const avgLatencyVal = Number(data.avg_latency_ms || 0);
+        const p95LatencyVal = Number(data.p95_latency_ms || 0);
+        const memVal = Number(data.current_memory_mb || 0);
+
         document.getElementById('queueLength').textContent = data.queue_length || 0;
         document.getElementById('completedCount').textContent = data.completed_count || 0;
-        document.getElementById('avgLatency').textContent = 
-          Number.isFinite(Number(data.avg_latency_ms)) ? Number(data.avg_latency_ms).toFixed(2) : '--';
-        document.getElementById('p95Latency').textContent = 
-          Number.isFinite(Number(data.p95_latency_ms)) ? Number(data.p95_latency_ms).toFixed(2) : '--';
-        document.getElementById('peakMemory').textContent = 
-          Number.isFinite(Number(data.current_memory_mb)) ? Number(data.current_memory_mb).toFixed(1) + ' MB' : '--';
+
+        const shownAvg = avgLatencyVal > 0 ? avgLatencyVal : Number(baseline.compute_ms || 0);
+        const shownP95 = p95LatencyVal > 0 ? p95LatencyVal : Number(baseline.compute_ms || 0);
+        const shownMem = memVal > 0 ? memVal : Number(baseline.memory_mb || 0);
+
+        document.getElementById('avgLatency').textContent = shownAvg > 0 ? shownAvg.toFixed(2) : '--';
+        document.getElementById('p95Latency').textContent = shownP95 > 0 ? shownP95.toFixed(2) : '--';
+        document.getElementById('peakMemory').textContent = shownMem > 0 ? shownMem.toFixed(1) + ' MB' : '--';
         document.getElementById('isRunning').textContent = data.is_running ? 'Yes' : 'No';
+        document.getElementById('throughput').textContent = shownAvg > 0 ? (1000.0 / shownAvg).toFixed(2) + ' req/s' : '-- req/s';
 
         // Get completed results
         const resultsResp = await fetch('/api/engine/results');
@@ -387,8 +612,18 @@ ENGINE_DASHBOARD_HTML = """
             renderResults(results.results.slice(-20).reverse());
           }
         }
+
+        const coverageResp = await fetch('/api/engine/coverage');
+        if (coverageResp.ok) {
+          const coverage = await coverageResp.json();
+          if (coverage.ok && Array.isArray(coverage.coverage)) {
+            renderCoverage(coverage.coverage);
+          }
+        }
       } catch (err) {
         console.error('Dashboard update failed:', err);
+        document.getElementById('statusBadge').textContent = 'Error';
+        document.getElementById('statusBadge').title = (err && err.message) ? err.message : 'Unknown dashboard update error';
       }
     }
 
@@ -412,8 +647,29 @@ ENGINE_DASHBOARD_HTML = """
       `).join('');
     }
 
+    function renderCoverage(rows) {
+      const tbody = document.querySelector('#coverageTable tbody');
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="empty-state"><p>No profiled coverage data found for current model.</p></td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          <td>${r.gpu || '-'}</td>
+          <td>${Number.isFinite(Number(r.compute_ms)) ? Number(r.compute_ms).toFixed(2) : '--'}</td>
+          <td>${Number.isFinite(Number(r.memory_mb)) ? Number(r.memory_mb).toFixed(2) : '--'}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function initDashboard() {
+      bindControls();
+      await loadOptions();
+      await updateDashboard();
+    }
+
     // Initial load
-    updateDashboard();
+    initDashboard();
     setInterval(updateDashboard, 2000);
   </script>
 </body>
@@ -426,19 +682,82 @@ def dashboard():
     return render_template_string(ENGINE_DASHBOARD_HTML)
 
 
+@app.route('/favicon.ico')
+def favicon() -> Response:
+    return Response(status=204)
+
+
 @app.route('/api/engine/status')
 def api_engine_status():
     if ENGINE is None:
-        return jsonify({'ok': False, 'error': 'engine_unavailable'}), 503
+        return jsonify({'ok': False, 'error': f'engine_unavailable: {ENGINE_INIT_ERROR or "unknown initialization error"}'}), 503
     status = ENGINE.get_queue_status()
-    return jsonify({'ok': True, 'status': status})
+    selected_gpu = getattr(ENGINE, 'gpu', _load_selected_gpu())
+    selected_model = getattr(ENGINE, 'model', _load_selected_model())
+    baseline = {
+        'compute_ms': get_profiled_compute_time(selected_gpu, selected_model, 32) if get_profiled_compute_time else None,
+        'memory_mb': get_profiled_memory(selected_gpu, selected_model, 32) if get_profiled_memory else None,
+    }
+    return jsonify({'ok': True, 'status': status, 'selected': {'gpu': selected_gpu, 'model': selected_model}, 'profiled_baseline': baseline})
 
 
 @app.route('/api/engine/results')
 def api_engine_results():
     if ENGINE is None:
-        return jsonify({'ok': False, 'error': 'engine_unavailable'}), 503
+        return jsonify({'ok': False, 'error': f'engine_unavailable: {ENGINE_INIT_ERROR or "unknown initialization error"}'}), 503
     return jsonify({'ok': True, 'results': ENGINE.get_results()})
+
+
+@app.route('/api/engine/coverage')
+def api_engine_coverage():
+    model = _load_selected_model()
+    coverage = _build_gpu_coverage(model=model, batch_size=32)
+    return jsonify({'ok': True, 'model': model, 'coverage': coverage})
+
+
+@app.route('/api/engine/options')
+def api_engine_options():
+  gpus = _list_available_gpus()
+  models_by_gpu = {gpu: _list_models_for_gpu(gpu) for gpu in gpus}
+  selected_gpu = _load_selected_gpu()
+  selected_model = _load_selected_model()
+  if selected_gpu not in models_by_gpu:
+    selected_gpu = gpus[0] if gpus else ''
+  models_for_gpu = models_by_gpu.get(selected_gpu, [])
+  if selected_model not in models_for_gpu and models_for_gpu:
+    selected_model = models_for_gpu[0]
+  return jsonify(
+    {
+      'ok': True,
+      'gpus': gpus,
+      'models_by_gpu': models_by_gpu,
+      'selected': {'gpu': selected_gpu, 'model': selected_model},
+    }
+  )
+
+
+@app.route('/api/engine/config', methods=['POST'])
+def api_engine_config():
+  payload = request.get_json(silent=True) or {}
+  gpu = str(payload.get('gpu', '')).strip()
+  model = str(payload.get('model', '')).strip()
+
+  gpus = _list_available_gpus()
+  if gpu not in gpus:
+    return jsonify({'ok': False, 'error': 'invalid_gpu'}), 400
+
+  models = _list_models_for_gpu(gpu)
+  if model not in models:
+    return jsonify({'ok': False, 'error': 'invalid_model_for_gpu'}), 400
+
+  _save_json_field(SELECTED_GPU_PATH, 'gpu', gpu)
+  _save_json_field(SELECTED_MODEL_PATH, 'model', model)
+
+  if ENGINE is not None:
+    ENGINE.gpu = gpu
+    ENGINE.model = model
+
+  return jsonify({'ok': True, 'selected': {'gpu': gpu, 'model': model}})
 
 
 if __name__ == '__main__':

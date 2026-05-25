@@ -7,20 +7,166 @@ Displays per-layer compute time, memory usage, and performance bottlenecks.
 
 import json
 import os
-from flask import Flask, jsonify, render_template_string
+import time
+from flask import Flask, jsonify, render_template_string, Response
+from flask import request
 from typing import Dict, Any, List
 
 # Import database for profiler results
+DB_INIT_ERROR = None
+
 try:
     from glide import database as db
+except Exception as exc_primary:
+    try:
+        import database as db
+    except Exception as exc_fallback:
+        db = None
+        DB_INIT_ERROR = f"primary={type(exc_primary).__name__}: {exc_primary}; fallback={type(exc_fallback).__name__}: {exc_fallback}"
+
+print("DATABASE FILE:", db.__file__ if db else "DB IMPORT FAILED")
+get_profiled_compute_time = None
+get_profiled_memory = None
+try:
+  from glide.engine import get_profiled_compute_time, get_profiled_memory
 except Exception:
-    db = None
+  try:
+    from engine import get_profiled_compute_time, get_profiled_memory  # type: ignore
+  except Exception:
+    pass
 
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False
 
 GLIDE_DIR = os.path.dirname(os.path.abspath(__file__))
+GPEMU_ROOT = os.path.dirname(GLIDE_DIR)
+PROFILED_DATA_ROOT = os.path.join(GPEMU_ROOT, 'profiled_data', 'time', 'compute', 'forward')
 LAYER_DB_PATH = os.path.join(GLIDE_DIR, 'layer_db.sqlite')
+SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
+SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
+
+
+def _load_selected_model() -> str:
+  if not os.path.exists(SELECTED_MODEL_PATH):
+    return 'resnet18'
+  try:
+    with open(SELECTED_MODEL_PATH, 'r') as file_handle:
+      data = json.load(file_handle)
+    if isinstance(data, dict):
+      return data.get('model', 'resnet18')
+  except (OSError, json.JSONDecodeError):
+    pass
+  return 'resnet18'
+
+
+def _load_selected_gpu() -> str:
+  if not os.path.exists(SELECTED_GPU_PATH):
+    return 'Tesla_M40'
+  try:
+    with open(SELECTED_GPU_PATH, 'r') as file_handle:
+      data = json.load(file_handle)
+    if isinstance(data, dict):
+      return data.get('gpu', 'Tesla_M40')
+  except (OSError, json.JSONDecodeError):
+    pass
+  return 'Tesla_M40'
+
+
+def _save_json_field(file_path: str, field: str, value: str) -> None:
+  payload: Dict[str, Any] = {}
+  if os.path.exists(file_path):
+    try:
+      with open(file_path, 'r') as file_handle:
+        loaded = json.load(file_handle)
+      if isinstance(loaded, dict):
+        payload = loaded
+    except (OSError, json.JSONDecodeError):
+      payload = {}
+
+  payload[field] = value
+  payload['updated_at'] = time.time()
+
+  if field == 'gpu':
+    payload['profile_path'] = os.path.join(PROFILED_DATA_ROOT, value)
+    payload.setdefault('database_path', os.path.join(GPEMU_ROOT, 'profiled_data'))
+
+  with open(file_path, 'w') as file_handle:
+    json.dump(payload, file_handle)
+
+
+def _list_models_for_gpu(gpu: str) -> list:
+
+    if db is None:
+        return []
+
+    profiles = db.get_all_profiles()
+
+    return sorted([
+        item['model']
+        for item in profiles
+        if item['gpu'] == gpu
+    ])
+
+
+def _list_available_gpus() -> list:
+
+    if db is None:
+        return []
+
+    profiles = db.get_all_profiles()
+
+    return sorted(
+        list(
+            set(
+                item['gpu']
+                for item in profiles
+            )
+        )
+    )
+
+
+def _build_gpu_coverage(model: str) -> list:
+
+    if db is None:
+        return []
+
+    profiles = db.get_all_profiles()
+
+    rows = []
+
+    for item in profiles:
+
+        if item['model'] != model:
+            continue
+
+        gpu = item['gpu']
+
+        layers = db.get_slowest_layers(
+            gpu=gpu,
+            model=model,
+            limit=1000
+        )
+
+        if not layers:
+            continue
+
+        total_compute = sum(
+            layer['compute_cost_ms']
+            for layer in layers
+        )
+
+        total_memory = sum(
+            layer['memory_cost_mb']
+            for layer in layers
+        )
+
+        rows.append({
+            'gpu': gpu,
+            'compute_ms': round(total_compute, 3),
+            'memory_mb': round(total_memory, 3),
+        })
+
+    return rows
 
 
 PROFILER_DASHBOARD_HTML = """
@@ -277,6 +423,38 @@ PROFILER_DASHBOARD_HTML = """
       font-size: 0.75rem;
       font-weight: 600;
     }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+      margin-top: 18px;
+    }
+
+    .controls label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #2c3e50;
+    }
+
+    .controls select,
+    .controls button {
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #d5dbe3;
+      background: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+    }
+
+    .controls button {
+      background: #2c3e50;
+      color: #fff;
+      border-color: #2c3e50;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -297,6 +475,17 @@ PROFILER_DASHBOARD_HTML = """
           <span class="metadata-label">Status:</span>
           <span class="status-badge" id="statusBadge">Ready</span>
         </div>
+        <div class="metadata-item">
+          <span class="metadata-label">Model:</span>
+          <span id="modelName">resnet18</span>
+        </div>
+      </div>
+      <div class="controls">
+        <label for="profGpuSelect">GPU</label>
+        <select id="profGpuSelect"></select>
+        <label for="profModelSelect">Model</label>
+        <select id="profModelSelect"></select>
+        <button id="profApplyConfigBtn" type="button">Apply</button>
       </div>
     </header>
 
@@ -322,6 +511,26 @@ PROFILER_DASHBOARD_HTML = """
     <div class="section">
       <div class="section-title">Compute Time Ranking</div>
       <div class="bar-chart" id="computeChart"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Profiled Coverage Across GPUs (Batch 32)</div>
+      <table id="gpuCoverageTable">
+        <thead>
+          <tr>
+            <th>GPU</th>
+            <th>Profiled Compute (ms)</th>
+            <th>Profiled Memory (MB)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td colspan="3" class="empty-state">
+              <p>No profiled GPU coverage found for selected model.</p>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <div class="section">
@@ -352,17 +561,82 @@ PROFILER_DASHBOARD_HTML = """
   </div>
 
   <script>
+    async function loadProfilerOptions() {
+      const resp = await fetch('/api/profiler/options');
+      if (!resp.ok) throw new Error('Failed to load profiler options');
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error || 'Profiler options unavailable');
+
+      const gpuSelect = document.getElementById('profGpuSelect');
+      const modelSelect = document.getElementById('profModelSelect');
+
+      gpuSelect.innerHTML = (data.gpus || []).map(g => `<option value="${g}">${g}</option>`).join('');
+      gpuSelect.value = data.selected?.gpu || '';
+
+      const models = data.models_by_gpu?.[gpuSelect.value] || [];
+      modelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+      if (models.includes(data.selected?.model)) {
+        modelSelect.value = data.selected.model;
+      }
+    }
+
+    async function applyProfilerConfig() {
+      const gpu = document.getElementById('profGpuSelect').value;
+      const model = document.getElementById('profModelSelect').value;
+      const resp = await fetch('/api/profiler/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gpu, model })
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to apply profiler config');
+      }
+      document.getElementById('statusBadge').textContent = 'Ready';
+      document.getElementById('statusBadge').title = 'Configuration updated';
+      await updateDashboard();
+    }
+
+    function bindProfilerControls() {
+      document.getElementById('profGpuSelect').addEventListener('change', async () => {
+        const gpu = document.getElementById('profGpuSelect').value;
+        const resp = await fetch('/api/profiler/options');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!data.ok) return;
+        const modelSelect = document.getElementById('profModelSelect');
+        const models = data.models_by_gpu?.[gpu] || [];
+        modelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+      });
+
+      document.getElementById('profApplyConfigBtn').addEventListener('click', async () => {
+        try {
+          await applyProfilerConfig();
+        } catch (err) {
+          document.getElementById('statusBadge').textContent = 'Error';
+          document.getElementById('statusBadge').title = (err && err.message) ? err.message : 'Configuration failed';
+        }
+      });
+    }
+
     async function updateDashboard() {
       try {
         const resp = await fetch('/api/profiler/latest');
-        if (!resp.ok) throw new Error('Profiler unavailable');
         const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Profiler unavailable');
 
         if (!data.ok) {
           document.getElementById('layerCount').textContent = '0';
           document.getElementById('totalLayers').textContent = '0';
+          document.getElementById('statusBadge').textContent = 'Unavailable';
+          if (data.error) {
+            document.getElementById('statusBadge').title = data.error;
+          }
           return;
         }
+
+        document.getElementById('statusBadge').textContent = 'Ready';
+        document.getElementById('statusBadge').title = '';
 
         const layers = Array.isArray(data.slowest_layers) ? data.slowest_layers : [];
         document.getElementById('totalLayers').textContent = layers.length;
@@ -385,8 +659,19 @@ PROFILER_DASHBOARD_HTML = """
 
         renderChart(layers.slice(0, 10));
         renderResults(layers);
+
+        const coverageResp = await fetch('/api/profiler/gpu_coverage');
+        if (coverageResp.ok) {
+          const coverageData = await coverageResp.json();
+          if (coverageData.ok) {
+            document.getElementById('modelName').textContent = coverageData.model || 'unknown';
+            renderGpuCoverage(coverageData.coverage || []);
+          }
+        }
       } catch (err) {
         console.error('Dashboard update failed:', err);
+        document.getElementById('statusBadge').textContent = 'Error';
+        document.getElementById('statusBadge').title = (err && err.message) ? err.message : 'Unknown profiler update error';
       }
     }
 
@@ -426,8 +711,29 @@ PROFILER_DASHBOARD_HTML = """
       document.querySelector('#resultsTable tbody').innerHTML = '<tr><td colspan="4" class="empty-state"><p>No layers profiled yet.</p></td></tr>';
     }
 
+    function renderGpuCoverage(rows) {
+      const tbody = document.querySelector('#gpuCoverageTable tbody');
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="empty-state"><p>No profiled GPU coverage found for selected model.</p></td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          <td>${r.gpu || '-'}</td>
+          <td>${Number.isFinite(Number(r.compute_ms)) ? Number(r.compute_ms).toFixed(2) : '--'}</td>
+          <td>${Number.isFinite(Number(r.memory_mb)) ? Number(r.memory_mb).toFixed(2) : '--'}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function initDashboard() {
+      bindProfilerControls();
+      await loadProfilerOptions();
+      await updateDashboard();
+    }
+
     // Initial load
-    updateDashboard();
+    initDashboard();
     setInterval(updateDashboard, 3000);
   </script>
 </body>
@@ -440,17 +746,128 @@ def dashboard():
     return render_template_string(PROFILER_DASHBOARD_HTML)
 
 
+@app.route('/favicon.ico')
+def favicon() -> Response:
+    return Response(status=204)
+
+
 @app.route('/api/profiler/latest')
 def api_profiler_latest():
+
     if db is None:
-        return jsonify({'ok': False, 'error': 'database_unavailable'}), 503
+        return jsonify({
+            'ok': False,
+            'error': f'database_unavailable: {DB_INIT_ERROR or "unknown initialization error"}'
+        }), 503
+
     try:
-        slowest = db.get_slowest_layers(limit=50)
-        return jsonify({'ok': True, 'slowest_layers': slowest})
+        gpu = _load_selected_gpu()
+        model = _load_selected_model()
+
+        slowest = db.get_slowest_layers(
+            gpu=gpu,
+            model=model,
+            limit=50
+        )
+
+        return jsonify({
+            'ok': True,
+            'gpu': gpu,
+            'model': model,
+            'slowest_layers': slowest
+        })
+
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        return jsonify({
+            'ok': False,
+            'error': str(e)
+        }), 500
 
 
+@app.route('/api/profiler/gpu_coverage')
+def api_profiler_gpu_coverage():
+    model = _load_selected_model()
+    coverage = _build_gpu_coverage(model=model)
+    return jsonify({'ok': True, 'model': model, 'coverage': coverage})
+
+
+@app.route('/api/profiler/options')
+def api_profiler_options():
+  gpus = _list_available_gpus()
+  models_by_gpu = {gpu: _list_models_for_gpu(gpu) for gpu in gpus}
+  selected_gpu = _load_selected_gpu()
+  selected_model = _load_selected_model()
+  if selected_gpu not in models_by_gpu:
+    selected_gpu = gpus[0] if gpus else ''
+  models_for_gpu = models_by_gpu.get(selected_gpu, [])
+  if selected_model not in models_for_gpu and models_for_gpu:
+    selected_model = models_for_gpu[0]
+
+  return jsonify(
+    {
+      'ok': True,
+      'gpus': gpus,
+      'models_by_gpu': models_by_gpu,
+      'selected': {'gpu': selected_gpu, 'model': selected_model},
+    }
+  )
+
+
+@app.route('/api/profiler/config', methods=['POST'])
+def api_profiler_config():
+
+    payload = request.get_json(silent=True) or {}
+
+    print("\n===== CONFIG REQUEST =====")
+    print("RAW PAYLOAD:", payload)
+
+    gpu = str(payload.get('gpu', '')).strip()
+    model = str(payload.get('model', '')).strip()
+
+    print("GPU:", gpu)
+    print("MODEL:", model)
+
+    gpus = _list_available_gpus()
+
+    print("AVAILABLE GPUS:", gpus)
+
+    if gpu not in gpus:
+        return jsonify({
+            'ok': False,
+            'error': 'invalid_gpu',
+            'received_gpu': gpu,
+            'available_gpus': gpus
+        }), 400
+
+    models = _list_models_for_gpu(gpu)
+
+    print("MODELS FOR GPU:", models)
+
+    if model not in models:
+        return jsonify({
+            'ok': False,
+            'error': 'invalid_model_for_gpu',
+            'received_model': model,
+            'available_models': models
+        }), 400
+
+    _save_json_field(SELECTED_GPU_PATH, 'gpu', gpu)
+    _save_json_field(SELECTED_MODEL_PATH, 'model', model)
+
+    print("CONFIG SAVED SUCCESSFULLY")
+
+    return jsonify({
+        'ok': True,
+        'selected': {
+            'gpu': gpu,
+            'model': model
+        }
+    })
 if __name__ == '__main__':
     print('Starting GLIDE Profiler Dashboard on port 5002...')
-    app.run(host='0.0.0.0', port=5002, debug=False)
+    app.run(
+        host='0.0.0.0',
+        port=5002,
+        debug=False,
+        use_reloader=False
+    )

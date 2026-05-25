@@ -2,7 +2,7 @@
 Layer cost database for GLIDE profiler.
 
 Stores profiled layer execution times and memory usage indexed by
-layer type and configuration.
+GPU, model, layer type, and configuration.
 """
 
 import json
@@ -25,12 +25,14 @@ def init_db(db_path: str = LAYER_DB_PATH) -> None:
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS layers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            gpu TEXT NOT NULL,
+            model TEXT NOT NULL,
             layer_type TEXT NOT NULL,
             config TEXT NOT NULL,
             compute_cost_ms REAL,
             memory_cost_mb REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(layer_type, config)
+            UNIQUE(gpu, model, layer_type, config)
         )
     ''')
 
@@ -39,22 +41,16 @@ def init_db(db_path: str = LAYER_DB_PATH) -> None:
 
 
 def record_layer_cost(
+    gpu: str,
+    model: str,
     layer_type: str,
     config: Dict[str, Any],
     compute_cost_ms: float,
     memory_cost_mb: float,
     db_path: str = LAYER_DB_PATH,
 ) -> None:
-    """Record or update a layer's cost profile.
-    
-    Args:
-        layer_type: Name of the layer type (e.g., 'Conv2d', 'Linear')
-        config: Configuration dict for the layer
-        compute_cost_ms: Average compute time in milliseconds
-        memory_cost_mb: Average memory usage in MB
-        db_path: Path to the database file
-    """
-    # Ensure database exists
+    """Insert or update layer profile."""
+
     if not os.path.exists(db_path):
         init_db(db_path)
 
@@ -63,35 +59,47 @@ def record_layer_cost(
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Insert or update
-    cursor.execute('''
-        INSERT INTO layers (layer_type, config, compute_cost_ms, memory_cost_mb)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(layer_type, config) DO UPDATE SET
+    cursor.execute(
+        '''
+        INSERT INTO layers (
+            gpu,
+            model,
+            layer_type,
+            config,
+            compute_cost_ms,
+            memory_cost_mb
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+
+        ON CONFLICT(gpu, model, layer_type, config)
+        DO UPDATE SET
             compute_cost_ms = excluded.compute_cost_ms,
             memory_cost_mb = excluded.memory_cost_mb,
             created_at = CURRENT_TIMESTAMP
-    ''', (layer_type, config_json, compute_cost_ms, memory_cost_mb))
+        ''',
+        (
+            gpu,
+            model,
+            layer_type,
+            config_json,
+            compute_cost_ms,
+            memory_cost_mb,
+        ),
+    )
 
     conn.commit()
     conn.close()
 
 
 def query_layer_cost(
+    gpu: str,
+    model: str,
     layer_type: str,
     config: Dict[str, Any],
     db_path: str = LAYER_DB_PATH,
 ) -> Optional[Dict[str, Any]]:
-    """Query a layer's profiled cost.
-    
-    Args:
-        layer_type: Name of the layer type
-        config: Configuration dict for the layer
-        db_path: Path to the database file
+    """Query a layer's profiled cost."""
 
-    Returns:
-        Dict with compute_cost_ms and memory_cost_mb, or None if not found
-    """
     if not os.path.exists(db_path):
         return None
 
@@ -101,40 +109,56 @@ def query_layer_cost(
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT compute_cost_ms, memory_cost_mb FROM layers
-        WHERE layer_type = ? AND config = ?
-    ''', (layer_type, config_json))
+        SELECT compute_cost_ms, memory_cost_mb
+        FROM layers
+        WHERE gpu = ?
+        AND model = ?
+        AND layer_type = ?
+        AND config = ?
+    ''', (
+        gpu,
+        model,
+        layer_type,
+        config_json
+    ))
 
     row = cursor.fetchone()
     conn.close()
 
     if row:
-        return {'compute_cost_ms': row[0], 'memory_cost_mb': row[1]}
+        return {
+            'compute_cost_ms': row[0],
+            'memory_cost_mb': row[1]
+        }
+
     return None
 
 
 def get_layer_cost(
+    gpu: str,
+    model: str,
     layer_type: str,
     config: Dict[str, Any],
     db_path: str = LAYER_DB_PATH,
 ) -> Optional[Dict[str, Any]]:
     """Backward-compatible alias for query_layer_cost."""
-    return query_layer_cost(layer_type, config, db_path)
+    return query_layer_cost(
+        gpu,
+        model,
+        layer_type,
+        config,
+        db_path
+    )
 
 
 def get_slowest_layers(
+    gpu: str,
+    model: str,
     limit: int = 5,
     db_path: str = LAYER_DB_PATH,
 ) -> list:
-    """Get the slowest layers by compute time.
-    
-    Args:
-        limit: Number of results to return
-        db_path: Path to the database file
+    """Get the slowest layers by compute time."""
 
-    Returns:
-        List of dicts with layer_type, config, compute_cost_ms, memory_cost_mb
-    """
     if not os.path.exists(db_path):
         return []
 
@@ -142,16 +166,27 @@ def get_slowest_layers(
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT layer_type, config, compute_cost_ms, memory_cost_mb
+        SELECT
+            layer_type,
+            config,
+            compute_cost_ms,
+            memory_cost_mb
         FROM layers
+        WHERE gpu = ?
+        AND model = ?
         ORDER BY compute_cost_ms DESC
         LIMIT ?
-    ''', (limit,))
+    ''', (
+        gpu,
+        model,
+        limit
+    ))
 
     rows = cursor.fetchall()
     conn.close()
 
     result = []
+
     for row in rows:
         result.append({
             'layer_type': row[0],
@@ -159,4 +194,37 @@ def get_slowest_layers(
             'compute_cost_ms': row[2],
             'memory_cost_mb': row[3],
         })
+
     return result
+# Add this to glide/database.py
+
+def get_all_profiles(
+    db_path: str = LAYER_DB_PATH,
+) -> list:
+    """Return all profiled GPU/model combinations."""
+
+    if not os.path.exists(db_path):
+        return []
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        '''
+        SELECT DISTINCT gpu, model
+        FROM layers
+        ORDER BY gpu, model
+        '''
+    )
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [
+        {
+            'gpu': row[0],
+            'model': row[1],
+        }
+        for row in rows
+    ]
