@@ -155,10 +155,10 @@ ENGINE_DASHBOARD_HTML = """
 
     body {
       font-family: 'Inter', sans-serif;
-      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      background: #f8f9fa;
       min-height: 100vh;
       padding: 40px 20px;
-      color: #2c3e50;
+      color: #1a1a1a;
     }
 
     .container {
@@ -168,191 +168,206 @@ ENGINE_DASHBOARD_HTML = """
 
     header {
       text-align: center;
-      margin-bottom: 50px;
-      padding-bottom: 30px;
-      border-bottom: 2px solid rgba(44, 62, 80, 0.1);
+      margin-bottom: 60px;
+      padding-bottom: 40px;
+      border-bottom: 1px solid #e5e7eb;
     }
 
     h1 {
-      font-size: 2.2rem;
+      font-size: 2rem;
       font-weight: 700;
-      margin-bottom: 10px;
-      color: #1a252f;
+      margin-bottom: 8px;
+      color: #0f172a;
+      letter-spacing: -0.5px;
     }
 
     .subtitle {
-      font-size: 1.1rem;
-      color: #7f8c8d;
-      font-weight: 300;
-      margin-bottom: 20px;
+      font-size: 1rem;
+      color: #6b7280;
+      font-weight: 400;
+      margin-bottom: 24px;
     }
 
     .metadata {
       display: flex;
       justify-content: center;
-      gap: 30px;
-      font-size: 0.95rem;
-      color: #34495e;
+      gap: 40px;
+      flex-wrap: wrap;
+      font-size: 0.9rem;
+      color: #4b5563;
     }
 
     .metadata-item {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
     }
 
     .metadata-label {
       font-weight: 600;
-      color: #2c3e50;
+      color: #1a1a1a;
     }
 
     .status-badge {
       display: inline-block;
-      padding: 6px 14px;
-      border-radius: 20px;
-      font-size: 0.85rem;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 0.8rem;
       font-weight: 600;
-      background: #e8f5e9;
-      color: #2e7d32;
+      background: #dcfce7;
+      color: #16a34a;
+      letter-spacing: 0.3px;
     }
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       gap: 24px;
-      margin-bottom: 40px;
+      margin-bottom: 48px;
     }
 
     .card {
       background: white;
-      border-radius: 8px;
-      padding: 24px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-      border-left: 4px solid #3498db;
-      transition: box-shadow 0.3s ease;
+      border-radius: 10px;
+      padding: 28px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      border: 1px solid #e5e7eb;
+      border-left: 3px solid #2563eb;
+      transition: all 0.2s ease;
     }
 
     .card:hover {
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      border-left-color: #1d4ed8;
     }
 
     .card-label {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: #7f8c8d;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #6b7280;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 10px;
+      letter-spacing: 0.8px;
+      margin-bottom: 12px;
     }
 
     .card-value {
       font-size: 2.5rem;
       font-weight: 700;
-      color: #2c3e50;
+      color: #0f172a;
       font-family: 'IBM Plex Mono', monospace;
+      line-height: 1.2;
     }
 
     .card-unit {
-      font-size: 0.9rem;
-      color: #95a5a6;
-      margin-left: 8px;
+      font-size: 0.85rem;
+      color: #9ca3af;
+      margin-left: 6px;
+      font-weight: 500;
     }
 
     .section {
       background: white;
-      border-radius: 8px;
-      padding: 30px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-      margin-bottom: 30px;
+      border-radius: 10px;
+      padding: 36px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      border: 1px solid #e5e7eb;
+      margin-bottom: 36px;
     }
 
     .section-title {
-      font-size: 1.4rem;
+      font-size: 1.3rem;
       font-weight: 700;
-      margin-bottom: 24px;
-      color: #1a252f;
-      padding-bottom: 12px;
-      border-bottom: 2px solid #ecf0f1;
+      margin-bottom: 28px;
+      color: #0f172a;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #f3f4f6;
+      letter-spacing: -0.3px;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.95rem;
-    }
-
-    thead {
-      background: #f8f9fa;
-      border-bottom: 2px solid #ecf0f1;
-    }
-
-    th {
-      padding: 12px;
-      text-align: left;
-      font-weight: 600;
-      color: #2c3e50;
-      font-size: 0.85rem;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-    }
-
-    td {
-      padding: 14px 12px;
-      border-bottom: 1px solid #ecf0f1;
-      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.9rem;
     }
 
+    thead {
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    th {
+      padding: 14px 16px;
+      text-align: left;
+      font-weight: 600;
+      color: #374151;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    td {
+      padding: 16px;
+      border-bottom: 1px solid #f3f4f6;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.85rem;
+    }
+
     tbody tr:hover {
-      background: #f8f9fa;
+      background: #f9fafb;
     }
 
     .empty-state {
       text-align: center;
-      padding: 40px 20px;
-      color: #95a5a6;
+      padding: 60px 20px;
+      color: #9ca3af;
     }
 
     .empty-state p {
-      font-size: 1.1rem;
-      margin-bottom: 10px;
+      font-size: 1rem;
+      margin-bottom: 8px;
     }
 
     footer {
       text-align: center;
-      margin-top: 60px;
-      padding-top: 30px;
-      border-top: 1px solid rgba(44, 62, 80, 0.1);
-      color: #95a5a6;
-      font-size: 0.9rem;
+      margin-top: 80px;
+      padding-top: 40px;
+      border-top: 1px solid #e5e7eb;
+      color: #9ca3af;
+      font-size: 0.85rem;
     }
 
     .stat-row {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
-      margin-bottom: 30px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 24px;
+      margin-bottom: 36px;
     }
 
     .stat {
-      padding: 15px;
-      background: #f8f9fa;
-      border-radius: 6px;
-      border-left: 3px solid #3498db;
+      padding: 20px;
+      background: #f9fafb;
+      border-radius: 8px;
+      border-left: 3px solid #2563eb;
+      transition: all 0.2s ease;
+    }
+
+    .stat:hover {
+      background: #f3f4f6;
     }
 
     .stat-label {
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: #7f8c8d;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #6b7280;
       text-transform: uppercase;
-      margin-bottom: 6px;
+      letter-spacing: 0.8px;
+      margin-bottom: 8px;
     }
 
     .stat-value {
       font-size: 1.8rem;
       font-weight: 700;
-      color: #2c3e50;
+      color: #0f172a;
       font-family: 'IBM Plex Mono', monospace;
     }
 
@@ -362,30 +377,42 @@ ENGINE_DASHBOARD_HTML = """
       gap: 12px;
       align-items: center;
       justify-content: center;
-      margin-top: 18px;
+      margin-top: 24px;
     }
 
     .controls label {
       font-size: 0.85rem;
       font-weight: 600;
-      color: #2c3e50;
+      color: #1a1a1a;
     }
 
     .controls select,
     .controls button {
-      padding: 8px 10px;
+      padding: 10px 14px;
       border-radius: 6px;
-      border: 1px solid #d5dbe3;
+      border: 1px solid #d1d5db;
       background: #fff;
       font-family: 'Inter', sans-serif;
       font-size: 0.9rem;
+      transition: all 0.2s ease;
+    }
+
+    .controls select:hover,
+    .controls button:hover {
+      border-color: #9ca3af;
     }
 
     .controls button {
-      background: #2c3e50;
+      background: #2563eb;
       color: #fff;
-      border-color: #2c3e50;
+      border-color: #2563eb;
       cursor: pointer;
+      font-weight: 600;
+    }
+
+    .controls button:hover {
+      background: #1d4ed8;
+      border-color: #1d4ed8;
     }
   </style>
 </head>
