@@ -354,91 +354,61 @@ def profile_and_save(
     return results
 
 
-# -----------------------------------------------------------------------------
-# MAIN MASS PROFILER
-# -----------------------------------------------------------------------------
+def _format_config(config: Dict[str, Any], max_len: int = 42) -> str:
+    text = ','.join(f'{key}={value}' for key, value in sorted(config.items()))
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + '...'
+
 
 if __name__ == '__main__':
-
-    print('=' * 100)
-    print('GLIDE MASS GPU/MODEL PROFILER')
-    print('=' * 100)
-
+    model_name = 'resnet18'
+    gpu_name = 'Tesla_M40'
     batch_size = 32
     num_runs = 3
 
-    total_jobs = len(GPU_LIST) * len(MODEL_LIST)
+    print('=' * 120)
+    print('GLIDE LAYER PROFILER (SINGLE RUN)')
+    print(f'GPU={gpu_name} | MODEL={model_name} | BATCH_SIZE={batch_size} | NUM_RUNS={num_runs}')
+    print('=' * 120)
 
-    current_job = 1
+    start_total = time.perf_counter()
+    try:
+        results = profile_and_save(
+            model_name=model_name,
+            gpu_name=gpu_name,
+            batch_size=batch_size,
+            device='cpu',
+            num_runs=num_runs,
+        )
+    except ModuleNotFoundError as exc:
+        print(f'Profiler dependency missing: {exc}')
+        print('Install required dependencies (torch, torchvision) and rerun.')
+        raise SystemExit(1) from exc
+    end_total = time.perf_counter()
 
-    database.init_db()
+    print(f'Profiled {len(results)} layers in {(end_total - start_total):.2f}s')
+    print(f'Database: {database.LAYER_DB_PATH}')
+    print('-' * 120)
+    print(f"{'Layer Name':<32} | {'Type':<16} | {'Compute(ms)':>12} | {'Memory(MB)':>10} | Config")
+    print('-' * 120)
+    for layer in results:
+        print(
+            f"{layer['layer_name'][:32]:<32} | "
+            f"{layer['layer_type'][:16]:<16} | "
+            f"{layer['compute_time_ms']:>12.3f} | "
+            f"{layer['memory_mb']:>10.3f} | "
+            f"{_format_config(layer['config'])}"
+        )
 
-    for gpu_name in GPU_LIST:
-
-        print('\n' + '=' * 100)
-        print(f'GPU: {gpu_name}')
-        print('=' * 100)
-
-        for model_name in MODEL_LIST:
-
-            print('\n' + '-' * 100)
-            print(f'[{current_job}/{total_jobs}]')
-            print(f'GPU   : {gpu_name}')
-            print(f'MODEL : {model_name}')
-            print('-' * 100)
-
-            try:
-
-                start_total = time.perf_counter()
-
-                results = profile_and_save(
-                    model_name=model_name,
-                    gpu_name=gpu_name,
-                    batch_size=batch_size,
-                    device='cpu',
-                    num_runs=num_runs,
-                )
-
-                end_total = time.perf_counter()
-
-                total_compute = sum(
-                    r['compute_time_ms']
-                    for r in results
-                )
-
-                avg_compute = (
-                    total_compute / len(results)
-                    if results else 0.0
-                )
-
-                slowest = max(
-                    results,
-                    key=lambda x: x['compute_time_ms']
-                ) if results else None
-
-                print('[SUCCESS]')
-                print(f'Layers Profiled : {len(results)}')
-                print(f'Total Compute   : {total_compute:.3f} ms')
-                print(f'Average Layer   : {avg_compute:.3f} ms')
-                print(f'Elapsed Time    : {(end_total - start_total):.2f} sec')
-
-                if slowest:
-
-                    print(
-                        f'Slowest Layer   : '
-                        f'{slowest["layer_name"]} '
-                        f'({slowest["compute_time_ms"]:.3f} ms)'
-                    )
-
-            except Exception as e:
-
-                print('[FAILED]')
-                print(f'GPU   : {gpu_name}')
-                print(f'MODEL : {model_name}')
-                print(f'ERROR : {e}')
-
-            current_job += 1
-
-    print('\n' + '=' * 100)
-    print('ALL GPU/MODEL PROFILING COMPLETE')
-    print('=' * 100)
+    print('-' * 120)
+    print('Top 5 slowest layers:')
+    slowest_layers = database.get_slowest_layers(gpu=gpu_name, model=model_name, limit=5)
+    for index, row in enumerate(slowest_layers, start=1):
+        print(
+            f"{index:>2}. {row['layer_type']:<16} "
+            f"compute={row['compute_cost_ms']:.3f} ms | "
+            f"memory={row['memory_cost_mb']:.3f} MB | "
+            f"config={_format_config(row['config'])}"
+        )
+    print('=' * 120)

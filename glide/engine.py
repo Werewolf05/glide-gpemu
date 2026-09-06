@@ -16,6 +16,8 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
+from .scheduler import Scheduler, create_scheduler
+
 
 GLIDE_DIR = os.path.dirname(os.path.abspath(__file__))
 GPEMU_ROOT = os.path.dirname(GLIDE_DIR)
@@ -171,13 +173,16 @@ class InferenceEngine:
 
     _skip_sleep = False  # Set to True for testing to avoid actual time delays
 
-    def __init__(self, gpu: Optional[str] = None, model: Optional[str] = None):
+    def __init__(self, gpu: Optional[str] = None, model: Optional[str] = None, scheduler: str = 'fifo'):
         self.gpu = gpu or self._load_selected_gpu()
         self.model = model or self._load_selected_model()
+        self.scheduler_name = scheduler.lower()
+        self.scheduler: Scheduler = create_scheduler(self.scheduler_name, self.gpu)
         self.request_queue: List[InferenceRequest] = []
         self.completed_requests: List[InferenceRequest] = []
         self.current_memory_mb = 0.0
         self.is_running = False
+        self.queue_history: List[Dict[str, Any]] = []
 
     def _load_selected_gpu(self) -> str:
         if not os.path.exists(SELECTED_GPU_PATH):
@@ -220,8 +225,12 @@ class InferenceEngine:
         if not self.request_queue:
             return None
 
-        self.request_queue.sort(key=lambda request: (-request.priority, request.arrival_time))
-        request = self.request_queue.pop(0)
+        current_time = time.time()
+        self.queue_history.append({'timestamp': current_time, 'queue_length': len(self.request_queue)})
+        request = self.scheduler.select_next(self.request_queue, current_time)
+        if request is None:
+            return None
+        self.request_queue.remove(request)
 
         request.status = 'processing'
         request.start_time = time.time()
@@ -241,7 +250,9 @@ class InferenceEngine:
         request.end_time = time.time()
         request.status = 'completed'
         request.latency_ms = (request.end_time - request.arrival_time) * 1000.0
+        self.scheduler.record_completion(request)
         self.completed_requests.append(request)
+        self.queue_history.append({'timestamp': request.end_time, 'queue_length': len(self.request_queue)})
         return request
 
     def run_queue(self) -> List[InferenceRequest]:
@@ -274,6 +285,8 @@ class InferenceEngine:
             'p95_latency_ms': round(p95_latency_ms, 2),
             'current_memory_mb': round(self.current_memory_mb, 2),
             'is_running': self.is_running,
+            'scheduler': self.scheduler_name,
+            'scheduler_stats': self.scheduler.get_stats(),
         }
 
     def get_results(self) -> List[Dict[str, Any]]:
@@ -284,15 +297,23 @@ class InferenceEngine:
         self.completed_requests.clear()
         self.current_memory_mb = 0.0
         self.is_running = False
+        self.queue_history.clear()
 
     def write_to_dashboard(self) -> None:
+        from .metrics import compute_metrics
+
+        completed = self.get_results()
         payload = {
             'status': 'completed',
+            'scheduler_name': self.scheduler_name,
+            'queue_history': self.queue_history,
+            'per_request': completed,
+            'metrics': compute_metrics(completed),
             'engine_results': {
                 'gpu': self.gpu,
                 'model': self.model,
                 'queue_status': self.get_queue_status(),
-                'completed_requests': self.get_results(),
+                'completed_requests': completed,
             },
             'timestamp': time.time(),
         }
