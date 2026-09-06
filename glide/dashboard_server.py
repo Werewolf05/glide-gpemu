@@ -8,12 +8,12 @@ from typing import Any, Dict, List
 from flask import Flask, jsonify, render_template_string, request
 
 
-GLIDE_DIR = '/workspace/gpemu/glide'
+GLIDE_DIR = os.environ.get('GLIDE_DIR', os.path.dirname(os.path.abspath(__file__)))
 METRICS_PATH = os.path.join(GLIDE_DIR, 'glide_metrics.json')
 SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
 SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
-PROFILED_DATA_ROOT = '/workspace/gpemu/profiled_data'
-FALLBACK_PROFILED_DATA_ROOT = '/home/pranav/gpemu/profiled_data'
+PROFILED_DATA_ROOT = os.path.join(os.path.dirname(GLIDE_DIR), 'profiled_data')
+FALLBACK_PROFILED_DATA_ROOT = os.path.join(os.path.dirname(GLIDE_DIR), 'profiled_data')
 DEFAULT_MODEL = 'resnet18'
 DEFAULT_GPU = 'Tesla_M40'
 
@@ -880,6 +880,33 @@ DASHBOARD_HTML = """
        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
      }
 
+     .review-panel {
+       background: white;
+       border: 1px solid #e5e7eb;
+       border-radius: 12px;
+       padding: 20px;
+       margin-bottom: 20px;
+       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+     }
+
+     .comparison-bars {
+       display: grid;
+       grid-template-columns: repeat(3, 1fr);
+       gap: 16px;
+       align-items: end;
+       min-height: 150px;
+     }
+
+     .comparison-column { display: grid; gap: 6px; text-align: center; }
+     .comparison-bar { background: #2563eb; border-radius: 5px 5px 0 0; min-height: 8px; }
+     .comparison-column:nth-child(2) .comparison-bar { background: #10b981; }
+     .comparison-column:nth-child(3) .comparison-bar { background: #f59e0b; }
+     .queue-comparison { width: 100%; height: 150px; background: #f8fafc; border-radius: 8px; }
+     .fairness-meter { height: 12px; border-radius: 6px; background: #e5e7eb; overflow: hidden; }
+     .fairness-meter > span { display: block; height: 100%; width: 0; transition: width 300ms ease; background: #dc2626; }
+     .hasp-copy { color: #6b7280; line-height: 1.6; }
+     .formula { font-family: 'IBM Plex Mono', monospace; background: #f9fafb; padding: 12px; border-radius: 6px; margin-top: 10px; }
+
      .stat-label {
        color: #6b7280;
        font-size: 0.75rem;
@@ -1221,7 +1248,7 @@ DASHBOARD_HTML = """
           </div>
           <button class="btn" id="startRunBtn">Start New Run</button>
         </div>
-        <div class="hint">Select model and GPU for real GPEmu-backed metrics. HASP Scheduler -- Coming in Review 2.</div>
+        <div class="hint">Select model and GPU for real GPEmu-backed metrics. Scheduler: <strong id="schedulerActive">FIFO</strong>.</div>
       </div>
 
       <div class="model-info">
@@ -1271,6 +1298,14 @@ DASHBOARD_HTML = """
         <div class="stat-label">ETA <span class="src-badge derived">DERIVED</span></div>
         <div class="stat-value" id="etaTop">--</div>
       </div>
+      <div class="stat-chip">
+        <div class="stat-label">Fairness Index <span class="src-badge measured">METRICS</span></div>
+        <div class="stat-value" id="fairnessTop">--</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">Starvation Count <span class="src-badge measured">METRICS</span></div>
+        <div class="stat-value" id="starvationTop">--</div>
+      </div>
     </div>
 
     <div class="now-strip">
@@ -1278,11 +1313,29 @@ DASHBOARD_HTML = """
       <div class="now-meta" id="nowExecMeta">State: waiting | Source: profiled timing + measured runtime events</div>
     </div>
 
+    <div class="review-panel">
+      <div class="panel-title">Scheduler Comparison</div>
+      <div class="comparison-bars" id="schedulerComparison"><div class="empty">Run an experiment to load scheduler results.</div></div>
+      <div class="panel-title">Queue Length Over Time</div>
+      <svg class="queue-comparison" id="schedulerQueueComparison" viewBox="0 0 600 150" preserveAspectRatio="none"></svg>
+    </div>
+
+    <details class="review-panel">
+      <summary class="panel-title">How HASP prevents starvation</summary>
+      <div class="hasp-copy">HASP prevents requests from waiting forever by giving bonus priority to older requests. The longer you wait, the higher your priority becomes.</div>
+      <div class="formula">affinity = (1 / compute_ms) × memory_fit_score × (1 + age_boost)</div>
+    </details>
+
+    <div class="review-panel">
+      <div class="panel-title">Real-time Jain Fairness Index</div>
+      <div class="fairness-meter"><span id="fairnessMeter"></span></div>
+    </div>
+
     <div class="sim-grid">
       <div class="panel">
         <div class="panel-title">Task Queue Panel <span class="src-badge measured">MEASURED</span></div>
         <div class="spark-wrap">
-          <div class="spark-title">Queue Depth Trend</div>
+          <div class="spark-title">Queue Length Chart</div>
           <svg id="queueSparkline" viewBox="0 0 260 56" preserveAspectRatio="none"></svg>
         </div>
         <div class="task-list" id="taskQueue"></div>
@@ -1480,6 +1533,8 @@ DASHBOARD_HTML = """
       document.getElementById('maxTop').textContent = '--';
       document.getElementById('throughputTop').textContent = '--';
       document.getElementById('etaTop').textContent = '--';
+       document.getElementById('fairnessTop').textContent = '--';
+       document.getElementById('starvationTop').textContent = '--';
       document.getElementById('doneTop').textContent = '0';
       document.getElementById('meta').textContent = 'Awaiting run metadata...';
       document.getElementById('taskQueue').innerHTML = '<div class="empty">No tasks yet. Start a run to enqueue batches.</div>';
@@ -1586,6 +1641,7 @@ DASHBOARD_HTML = """
       const throughput = Number(metrics.throughput);
       const eta = Number(metrics.eta_seconds);
       const gpuUtil = Number(metrics.gpu_util);
+      const summary = metrics.metrics || {};
 
       document.getElementById('utilTop').textContent = Number.isFinite(gpuUtil) ? `${gpuUtil.toFixed(1)}%` : '--';
       document.getElementById('avgTop').textContent = Number.isFinite(avg) ? `${avg.toFixed(4)}s` : '--';
@@ -1594,11 +1650,51 @@ DASHBOARD_HTML = """
       document.getElementById('throughputTop').textContent = Number.isFinite(throughput) ? `${throughput.toFixed(2)} b/s` : '--';
       document.getElementById('etaTop').textContent = formatSeconds(eta);
       document.getElementById('doneTop').textContent = `${done}`;
+      const fairness = Number(summary.jains_fairness_index);
+      const starvation = Number(summary.starvation_count);
+      document.getElementById('fairnessTop').textContent = Number.isFinite(fairness) ? fairness.toFixed(3) : '--';
+      document.getElementById('starvationTop').textContent = Number.isFinite(starvation) ? `${starvation}` : '--';
+      document.getElementById('schedulerActive').textContent = String(metrics.scheduler_name || 'fifo').toUpperCase();
+      const meter = document.getElementById('fairnessMeter');
+      meter.style.width = `${clamp((Number.isFinite(fairness) ? fairness : 0) * 100, 0, 100)}%`;
+      meter.style.background = fairness >= 0.9 ? '#16a34a' : (fairness >= 0.7 ? '#f59e0b' : '#dc2626');
+    }
+
+    async function renderSchedulerComparison() {
+      const container = document.getElementById('schedulerComparison');
+      const queueChart = document.getElementById('schedulerQueueComparison');
+      try {
+        const response = await fetch('/api/experiment_results', { cache: 'no-store' });
+        const payload = await response.json();
+        const values = ['fifo', 'sjf', 'hasp'].map((name) => payload[name] || {});
+        const maxLatency = Math.max(1, ...values.map((item) => Number(item.avg_latency_ms) || 0));
+        container.innerHTML = values.map((item, index) => {
+          const name = ['FIFO', 'SJF', 'HASP'][index];
+          const height = ((Number(item.avg_latency_ms) || 0) / maxLatency) * 130;
+          return `<div class="comparison-column"><strong>${name}</strong><div class="comparison-bar" style="height:${height}px"></div><small>Avg ${(Number(item.avg_latency_ms) || 0).toFixed(1)} ms<br>P95 ${(Number(item.p95_latency_ms) || 0).toFixed(1)} ms<br>Fair ${(Number(item.jains_fairness_index) || 0).toFixed(3)}</small></div>`;
+        }).join('');
+        const colors = ['#2563eb', '#10b981', '#f59e0b'];
+        const histories = values.map((item) => Array.isArray(item.queue_history) ? item.queue_history : []);
+        const maxQueue = Math.max(1, ...histories.flatMap((history) => history.map((point) => Number(point.queue_length) || 0)));
+        queueChart.innerHTML = histories.map((history, index) => {
+          if (history.length < 1) return '';
+          const points = history.map((point, pointIndex) => {
+            const x = history.length === 1 ? 0 : (pointIndex / (history.length - 1)) * 600;
+            const y = 145 - ((Number(point.queue_length) || 0) / maxQueue) * 135;
+            return `${x.toFixed(1)},${y.toFixed(1)}`;
+          }).join(' ');
+          return `<polyline points="${points}" fill="none" stroke="${colors[index]}" stroke-width="3"/>`;
+        }).join('');
+      } catch (_error) {
+        container.innerHTML = '<div class="empty">No experiment results available.</div>';
+        queueChart.innerHTML = '';
+      }
     }
 
     function renderTaskQueue(metrics) {
       const queue = document.getElementById('taskQueue');
       const batches = Array.isArray(metrics.batches) ? metrics.batches : [];
+      const history = Array.isArray(metrics.queue_history) ? metrics.queue_history : [];
       if (batches.length === 0) {
         renderQueueSparkline(0);
         queue.innerHTML = '<div class="empty">No tasks yet. Start a run to enqueue batches.</div>';
@@ -1624,6 +1720,9 @@ DASHBOARD_HTML = """
 
       renderQueueSparkline(queueDepth);
 
+      if (history.length > 0) {
+        renderQueueSparkline(Number(history[history.length - 1].queue_length) || 0);
+      }
       queue.innerHTML = preview.map((task) => {
         const cls = task.status.toLowerCase();
         const timeTxt = Number.isFinite(task.compute_time) ? `${task.compute_time.toFixed(4)} s` : 'pending';
@@ -1881,6 +1980,7 @@ DASHBOARD_HTML = """
     });
 
     tick();
+    renderSchedulerComparison();
     restartTicker();
   </script>
 </body>
@@ -1984,6 +2084,10 @@ def _safe_metrics_payload() -> Dict[str, Any]:
     'max_compute_time': None,
     'throughput': None,
     'eta_seconds': None,
+    'scheduler_name': 'fifo',
+    'queue_history': [],
+    'per_request': [],
+    'metrics': {},
     'gpu_util': utilization['gpu_util'],
     'compute_util': utilization['compute_util'],
     'profile_stats': profile_stats
@@ -2073,6 +2177,15 @@ def get_utilization(gpu: str, model: str,
     
     return {"gpu_util": 0, "compute_util": 0}
 
+
+def _calculate_dynamic_utilization(times: List[float], elapsed: float, gpu: str) -> Dict[str, int]:
+  if not times or elapsed <= 0:
+    return get_utilization(gpu, _load_selected_model())
+  compute_util = min(100, int((sum(times) / len(times) / 0.15) * 100))
+  gpu_util = min(100, int((sum(times) / elapsed) * 100))
+  return {"gpu_util": gpu_util, "compute_util": compute_util}
+
+
 def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   enriched = _safe_metrics_payload()
   enriched.update(data)
@@ -2092,6 +2205,17 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   batches: List[Dict[str, Any]] = enriched.get('batches', [])
   if not isinstance(batches, list):
     batches = []
+  if not batches and isinstance(enriched.get('per_request'), list):
+    batches = [
+      {
+        'batch': index + 1,
+        'compute_time': float(item.get('emulated_compute_ms', 0.0)) / 1000.0,
+        'timestamp': item.get('end_time'),
+        'memory_gb': float(item.get('memory_mb', 0.0) or 0.0) / 1024.0,
+      }
+      for index, item in enumerate(enriched['per_request'])
+      if isinstance(item, dict)
+    ]
   enriched['batches'] = batches
 
   times = [
@@ -2207,6 +2331,19 @@ def dashboard() -> str:
 def api_metrics():
   data = _load_metrics_file()
   return jsonify(_enrich_metrics(data))
+
+
+@app.route('/api/experiment_results')
+def api_experiment_results():
+  results_path = os.path.join(os.path.dirname(METRICS_PATH), 'experiment_results.json')
+  if not os.path.exists(results_path):
+    return jsonify({})
+  try:
+    with open(results_path, 'r', encoding='utf-8') as results_file:
+      data = json.load(results_file)
+    return jsonify(data if isinstance(data, dict) else {})
+  except (OSError, json.JSONDecodeError):
+    return jsonify({})
 
 
 @app.route('/api/set_model', methods=['POST'])
