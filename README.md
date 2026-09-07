@@ -310,18 +310,6 @@ where:
 | Starvation Count | Requests waiting more than 3x average |
 | Jain's Fairness Index | 0-1 score, 1 = perfectly fair |
 
-### Team
-
-| Member | Contribution |
-|--------|-------------|
-| Pranav M (1CR23EC104) | Layer profiling database, inference engine, HASP scheduler, GPEmu integration |
-| Teammate 2 | Model decomposition, workload generator, batching strategies, metrics framework |
-| Teammate 3 | Model complexity analyser, live dashboard, experimental report |
-
-**Institution:** CMR Institute of Technology, Bengaluru  
-**Department:** Electronics and Communication Engineering  
-**Academic Year:** 2025-2026
-
 ### Citation
 
 If you use GLIDE in your research, please cite both GPEmu and GLIDE:
