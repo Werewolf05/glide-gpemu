@@ -2,8 +2,10 @@ import fcntl
 import csv
 import json
 import os
+import sqlite3
+import statistics
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from flask import Flask, jsonify, render_template_string, request
 
@@ -2214,11 +2216,20 @@ canvas{max-height:220px}.resource{display:grid;gap:12px}.resource-row{display:gr
 <section id="page-profiler" class="page"><h1 class="page-heading">Layer Profiler</h1><label class="muted">Model <select class="selectors" style="display:inline-block" id="profileModel"><option>resnet18</option><option>resnet50</option><option>alexnet</option><option>vgg16</option></select></label><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Layer timing table</h3><table class="review-table"><tr><th>Layer Type</th><th>Compute</th><th>Memory</th><th>% total</th></tr><tr><td>Conv2d k=7</td><td>61.29ms</td><td>98MB</td><td>34.2%</td></tr><tr><td>BatchNorm</td><td>55.40ms</td><td>98MB</td><td>30.9%</td></tr><tr><td>MaxPool2d</td><td>44.88ms</td><td>24.5MB</td><td>25.1%</td></tr><tr><td>Conv2d k=3</td><td>33.42ms</td><td>24.5MB</td><td>18.7%</td></tr><tr><td>ReLU</td><td>0.03ms</td><td>3.06MB</td><td>0.02%</td></tr><tr><td>Linear</td><td>0.17ms</td><td>0.12MB</td><td>0.09%</td></tr></table></div><div class="review-card"><h3>Layer compute time breakdown</h3><p>Conv2d <span class="bar" style="display:inline-block;width:70%"><span style="width:100%"></span></span></p><p>BatchNorm <span class="bar" style="display:inline-block;width:65%"><span style="width:76%;background:var(--blue)"></span></span></p><p>MaxPool <span class="bar" style="display:inline-block;width:60%"><span style="width:61%;background:#737b84"></span></span></p><p>ReLU <span class="bar" style="display:inline-block;width:50%"><span style="width:8%;background:var(--green)"></span></span></p></div></div><div class="review-cards"><div class="review-card insight"><h3>Bottleneck layer</h3><p>Conv2d (in=3, out=64, k=7) — 61ms — 34% of total</p></div><div class="review-card insight"><h3>Fastest layer</h3><p>AdaptiveAvgPool2d — 0.044ms — negligible</p></div><div class="review-card insight"><h3>Memory peak</h3><p>First Conv2d layer — 98MB output</p></div></div></section>
 <section id="page-experiments" class="page"><h1 class="page-heading">Experiment Results</h1><div class="review-cards four"><div class="review-card scenario selected"><h3>A · Single model</h3><p>resnet50 · uniform · 2/s · 30s</p></div><div class="review-card scenario"><h3>B · Single model</h3><p>resnet50 · Poisson · 2/s · 30s</p></div><div class="review-card scenario"><h3>C · Multi-model</h3><p>resnet18, resnet50, vgg16 · uniform</p></div><div class="review-card scenario"><h3>D · Bursty</h3><p>resnet18, resnet50, vgg16 · bursty</p></div></div><div class="review-grid"><div class="review-card"><h3>Scheduler results</h3><p>FIFO avg latency 193ms</p><div class="bar"><span style="width:100%;background:#737b84"></span></div><p>SJF avg latency 145ms</p><div class="bar"><span style="width:75%;background:var(--blue)"></span></div><p>HASP avg latency 112ms</p><div class="bar"><span style="width:58%"></span></div><p>Fairness index 0.94</p><div class="bar"><span style="width:94%;background:var(--green)"></span></div></div><div class="review-card"><h3>Workload trace</h3><div id="workloadTrace" class="trace"></div><p class="muted">Request arrivals over selected scenario duration.</p></div></div><div class="review-card"><h3>Key findings</h3><div class="review-cards"><p>HASP achieves <b style="color:var(--green)">0 starvation events</b> across all scenarios.</p><p>HASP fairness index <b style="color:var(--orange)">0.94</b> vs FIFO 0.78 and SJF 0.65.</p><p>HASP throughput stays within 5% of SJF while eliminating starvation.</p></div></div></section>
 <section id="page-about" class="page"><h1 class="page-heading">GLIDE <span style="color:var(--orange)">· About</span></h1><div class="review-card"><h2>GPU Layer-Level Inference and Dispatching Emulator</h2><p>GLIDE is a final-year ECE project built on top of GPEmu. It enables GPU inference scheduling research without requiring real GPU hardware.</p></div><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Team</h3><p><b>Pranav M (1CR23EC104)</b> — Core engine, HASP scheduler, GPEmu integration</p><p>[Teammate 2] — Model decomposition, workload generator, metrics</p><p>[Teammate 3] — Dashboard, complexity analyser, experimental report</p><p>CMR Institute of Technology, Bengaluru<br>Electronics and Communication Engineering<br>Academic Year: 2025-2026</p></div><div class="review-card"><h3>Technology stack</h3><p>GPEmu · PyTorch 1.8 · SQLite · Flask · Chart.js · Docker</p><h3 style="margin-top:20px">Hardware profiles</h3><p>6 GPU profiles · 36 architectures · 216 combinations · <b style="color:var(--green)">100% pass rate</b></p></div></div></section>
+<section id="page-engine" class="page"><h1 class="page-heading">Inference Engine</h1><div class="review-cards four"><div class="review-card"><b id="engineCount">--</b><p>Combinations available</p></div><div class="review-card"><b style="color:var(--green)">Profiled</b><p>Real profile source</p></div><div class="review-card"><b id="engineBest">--</b><p>Fastest GPU</p></div><div class="review-card"><b id="engineWorst">--</b><p>Slowest GPU</p></div></div><div class="review-card"><h3>GPU comparison</h3><table class="review-table"><thead><tr><th>GPU</th><th>Compute ms</th><th>Memory MB</th><th>Tier</th></tr></thead><tbody id="gpuComparisonRows"></tbody></table></div><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Model timings</h3><div id="modelTimingBars"></div></div><div class="review-card"><h3>Live engine test</h3><div id="engineTerminal" class="terminal">Run a real scheduler test to load requests.</div><button id="runEngineTest" class="action" style="margin-top:10px">Run new test</button></div></div></section>
+<section id="page-scheduler" class="page"><h1 class="page-heading">Scheduler</h1><div class="review-cards"><div class="review-card"><h3>FIFO</h3><p>Requests execute in arrival order.</p><span class="badge">BASELINE</span></div><div class="review-card"><h3>SJF</h3><p>Shortest profiled compute time first.</p><span class="badge blue">BASELINE</span></div><div class="review-card"><h3>HASP</h3><p>Affinity scheduling with aging boost.</p><div class="formula">age_boost = waiting_time / 5.0</div><span class="badge yellow">NOVEL CONTRIBUTION</span></div></div><div class="review-card"><h3>Real scheduler comparison</h3><div id="schedulerLoading" class="muted">Computing results from real profiled data...</div><table class="review-table"><thead><tr><th>Metric</th><th>FIFO</th><th>SJF</th><th>HASP</th></tr></thead><tbody id="schedulerRows"></tbody></table></div></section>
+<section id="page-profiler" class="page"><h1 class="page-heading">Profiler</h1><label class="muted">Model <select id="profileModel"><option>resnet18</option><option>resnet50</option><option>alexnet</option><option>vgg16</option></select></label><div class="review-card" style="margin-top:12px"><h3>Real layer timing results</h3><div id="profilerLoading" class="muted">Loading SQLite profiles...</div><table class="review-table"><thead><tr><th>Layer</th><th>Compute ms</th><th>Memory MB</th><th>% total</th></tr></thead><tbody id="profilerRows"></tbody></table></div><div class="review-cards" style="margin-top:12px"><div class="review-card insight"><h3>Bottleneck</h3><p id="bottleneck">--</p></div><div class="review-card insight"><h3>Fastest</h3><p id="fastest">--</p></div><div class="review-card insight"><h3>Memory peak</h3><p id="memoryPeak">--</p></div></div></section>
+<section id="page-experiments" class="page"><h1 class="page-heading">Experiment Results</h1><div id="experimentLoading" class="muted">Computing results from real profiled data...</div><div id="experimentResults"></div></section>
+<section id="page-about" class="page"><h1 class="page-heading">GLIDE <span style="color:var(--orange)">· About</span></h1><div class="review-card"><h2>GPU Layer-Level Inference and Dispatching Emulator</h2><p>GLIDE is a final-year ECE project built on top of GPEmu. It enables GPU inference scheduling research without requiring real GPU hardware.</p></div><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Team</h3><p><b>Pranav M (1CR23EC104)</b> — Core engine, HASP scheduler, GPEmu integration</p><p>Model decomposition, workload generator, metrics</p><p>Dashboard, complexity analyser, experimental report</p><p>CMR Institute of Technology, Bengaluru<br>Electronics and Communication Engineering<br>Academic Year: 2025-2026</p></div><div class="review-card"><h3>Technology stack</h3><p>GPEmu · PyTorch · SQLite · Flask · Chart.js · Docker</p><h3>Hardware profiles</h3><p>6 GPU profiles · 36 architectures · 216 combinations tested</p></div></div></section>
 </main>
 <script>
 const $=id=>document.getElementById(id), colors={orange:'#ff9900',blue:'#5794f2',green:'#73bf69',red:'#f2495c',yellow:'#fade2a',grid:'#2c3235'};
 let computeChart,latencyChart,lastMetrics=null;
 let engineReplayTimer=null;
+['engine','scheduler','profiler','experiments','about'].forEach(name=>{
+ const matches=document.querySelectorAll(`#page-${name}`);
+ for(let i=0;i<matches.length-1;i++)matches[i].remove();
+});
 document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('click',()=>{
  const page=item.dataset.page;
  document.querySelectorAll('.nav-item').forEach(nav=>nav.classList.toggle('active',nav===item));
@@ -2229,11 +2240,13 @@ document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('clic
 function replayEngine(){
  const terminal=$('engineTerminal'); if(!terminal)return;
  if(engineReplayTimer)clearInterval(engineReplayTimer);
- const lines=['[REQUEST] ae3664bf | Tesla V100 | ResNet50 | batch=32','[COMPUTE] emulated: 31.72ms | memory: 2953MB','[DONE]    latency: 34.24ms | queued: 0','[REQUEST] 481637cf | Tesla V100 | ResNet50 | batch=32','[COMPUTE] emulated: 31.72ms | memory: 2953MB','[DONE]    latency: 34.11ms | queued: 0','[REQUEST] 7cd19a42 | Tesla V100 | ResNet50 | batch=32','[COMPUTE] emulated: 31.72ms | memory: 2953MB','[DONE]    latency: 33.98ms | queued: 0'];
- let i=0; terminal.textContent=''; engineReplayTimer=setInterval(()=>{terminal.textContent+=`${lines[i++]}\n`;if(i===lines.length)clearInterval(engineReplayTimer)},300);
+ terminal.textContent='Computing results from real profiled data...';
+ fetch('/api/scheduler_comparison').then(response=>response.json()).then(data=>{
+  const requests=(data.fifo&&data.fifo.requests)||[];let i=0;terminal.textContent='';
+  engineReplayTimer=setInterval(()=>{const item=requests[i++];if(!item){clearInterval(engineReplayTimer);return}terminal.textContent+=`[REQUEST] ${item.request_id} | Tesla V100 | ResNet50 | batch=${item.batch_size}\n[COMPUTE] emulated: ${num(item.emulated_compute_ms).toFixed(2)}ms | memory: ${num(item.memory_mb).toFixed(0)}MB\n[DONE]    latency: ${num(item.latency_ms).toFixed(2)}ms | queued: 0\n`},300);
+ }).catch(()=>{terminal.textContent='Unable to load real scheduler results.'});
 }
-function drawTrace(){const trace=$('workloadTrace');if(!trace||trace.children.length)return;for(let i=0;i<24;i++){const dot=document.createElement('i');dot.style.left=`${4+(i*37)%92}%`;trace.appendChild(dot)}}
-document.querySelectorAll('.scenario').forEach(card=>card.addEventListener('click',()=>{document.querySelectorAll('.scenario').forEach(item=>item.classList.remove('selected'));card.classList.add('selected');const trace=$('workloadTrace');if(trace)trace.innerHTML='';drawTrace()}));
+function drawTrace(){}
 if($('runEngineTest'))$('runEngineTest').addEventListener('click',replayEngine);
 replayEngine();
 function num(v,d=0){const n=Number.parseFloat(v);return Number.isFinite(n)?n:d}
@@ -2242,10 +2255,20 @@ function gauge(id,text,value,kind){const v=Math.max(0,Math.min(100,num(value)));
 function chartOptions(){return {responsive:true,animation:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#8e9090'},grid:{color:colors.grid}},y:{ticks:{color:'#8e9090'},grid:{color:colors.grid}}}}}
 function updateCharts(data){const batches=Array.isArray(data.batches)?data.batches:[], labels=batches.map((_,i)=>i+1), compute=batches.map(x=>num(x.compute_time)*1000), latency=(data.per_request||[]).map(x=>num(x.latency_ms));if(computeChart)computeChart.data={labels,datasets:[{data:compute,borderColor:colors.orange,backgroundColor:'transparent',tension:.25}]};else computeChart=new Chart($('computeChart'),{type:'line',data:{labels,datasets:[{data:compute,borderColor:colors.orange,backgroundColor:'transparent',tension:.25}]},options:chartOptions()});if(latencyChart)latencyChart.data={labels:latency.map((_,i)=>i+1),datasets:[{data:latency,borderColor:colors.blue,backgroundColor:'transparent',tension:.25}]};else latencyChart=new Chart($('latencyChart'),{type:'line',data:{labels:latency.map((_,i)=>i+1),datasets:[{data:latency,borderColor:colors.blue,backgroundColor:'transparent',tension:.25}]},options:chartOptions()});computeChart.update();latencyChart.update()}
 function setOptions(select,values,selected){if(!select.options.length)values.forEach(v=>select.add(new Option(v,v)));select.value=selected}
+function tier(ms){return ms<50?['DATA CENTER','green']:ms<=100?['PROFESSIONAL','blue']:['LEGACY','red']}
+async function loadGpuComparison(){const rows=await (await fetch('/api/gpu_comparison')).json();$('engineCount').textContent=rows.length*36;$('engineBest').textContent=rows[0]?.gpu||'--';$('engineWorst').textContent=rows.at(-1)?.gpu||'--';$('gpuComparisonRows').innerHTML=rows.map(row=>{const t=tier(row.compute_ms);return `<tr><td>${row.gpu}</td><td>${num(row.compute_ms).toFixed(2)}</td><td>${num(row.memory_mb).toFixed(1)}</td><td><span class="badge ${t[1]}">${t[0]}</span></td></tr>`}).join('');loadModelTimings($('gpuSelector')?.value||'Tesla_V100-PCIE-32GB')}
+async function loadModelTimings(gpu){const rows=await (await fetch(`/api/model_timings?gpu=${encodeURIComponent(gpu)}`)).json();$('modelTimingBars').innerHTML=rows.slice(0,12).map(row=>`<p>${row.model} · ${num(row.compute_ms).toFixed(2)}ms</p><div class="bar"><span style="width:${Math.min(100,num(row.compute_ms)/Math.max(1,num(rows[0]?.compute_ms))*100)}%"></span></div>`).join('')}
+async function loadScheduler(){const data=await (await fetch('/api/scheduler_comparison')).json();$('schedulerLoading').style.display='none';const rows=[['Avg latency','avg_latency_ms','ms'],['P95 latency','p95_latency_ms','ms'],['Throughput','throughput','/s'],['Fairness index','jains_fairness_index',''],['Starvation','starvation_count','']];$('schedulerRows').innerHTML=rows.map(row=>`<tr><td>${row[0]}</td>${['fifo','sjf','hasp'].map(name=>`<td style="${name==='hasp'?'color:var(--orange)':''}">${num(data[name]?.[row[1]]).toFixed(row[1]==='jains_fairness_index'?3:2)}${row[2]}</td>`).join('')}</tr>`).join('')}
+async function loadProfiler(model){$('profilerLoading').textContent='Loading SQLite profiles...';let data=await (await fetch(`/api/profiler_results?model=${encodeURIComponent(model)}`)).json();if(!data.length){$('profilerLoading').textContent='No database result. Run profiler first.';return}$('profilerLoading').textContent=`${data.length} real layers loaded`;$('profilerRows').innerHTML=data.map(x=>`<tr><td>${x.layer_type}<br><small>${x.config}</small></td><td>${num(x.compute_cost_ms).toFixed(3)}</td><td>${num(x.memory_cost_mb).toFixed(2)}</td><td>${num(x.pct_of_total).toFixed(2)}%</td></tr>`).join('');$('bottleneck').textContent=`${data[0].layer_type} — ${num(data[0].compute_cost_ms).toFixed(3)}ms`;const fast=data.at(-1);$('fastest').textContent=`${fast.layer_type} — ${num(fast.compute_cost_ms).toFixed(3)}ms`;$('memoryPeak').textContent=`${Math.max(...data.map(x=>num(x.memory_cost_mb))).toFixed(2)}MB`}
+async function loadExperiments(){const data=await (await fetch('/api/experiment_results')).json();$('experimentLoading').style.display='none';$('experimentResults').innerHTML=Object.entries(data).map(([name,result])=>`<div class="review-card" style="margin-bottom:12px"><h3>${name}</h3><table class="review-table"><tr><th>Scheduler</th><th>Avg ms</th><th>P95 ms</th><th>Fairness</th><th>Starvation</th></tr>${Object.entries(result.schedulers||{}).map(([scheduler,m])=>`<tr><td>${scheduler}</td><td>${num(m.avg_latency_ms).toFixed(2)}</td><td>${num(m.p95_latency_ms).toFixed(2)}</td><td>${num(m.jains_fairness_index).toFixed(3)}</td><td>${m.starvation_count}</td></tr>`).join('')}</table></div>`).join('')}
 function render(data){lastMetrics=data;const gpu=num(data.gpu_util),compute=num(data.compute_util),profile=data.profile_stats||{},gpuInfo=data.gpu_info||{},modelInfo=data.model_info||{},memory=num(profile.memory_peak_gb)*1024,totalMemory=num(gpuInfo.memory_gb)*1024,memoryPct=totalMemory?memory/totalMemory*100:0,bandwidth=num(profile.estimated_bandwidth_gbps),throughput=num(data.throughput),metrics=data.metrics||{},queue=data.queue_status||{};setOptions($('gpuSelector'),data.available_gpus||[],data.selected_gpu);setOptions($('modelSelector'),data.available_models||[],data.selected_model||data.active_model);$('gpuName').textContent=data.selected_gpu||'--';$('modelName').textContent=modelInfo.display_name||data.active_model||'--';$('statusText').textContent=String(data.status||'IDLE').toUpperCase();$('status').className=`status ${data.status||'idle'}`;gauge('gpuGauge','gpuGaugeText',gpu,'gpu');gauge('computeGauge','computeGaugeText',compute,'compute');gauge('memoryGauge','memoryGaugeText',memoryPct,'memory');$('throughput').textContent=throughput.toFixed(2);$('avgCompute').innerHTML=`${(num(data.avg_compute_time)*1000).toFixed(2)} <span class="unit">ms</span>`;$('minCompute').textContent=(num(data.min_compute_time)*1000).toFixed(2);$('maxCompute').textContent=(num(data.max_compute_time)*1000).toFixed(2);$('totalBatches').textContent=num(data.total_batches);$('eta').textContent=data.eta_seconds==null?'--':`${num(data.eta_seconds).toFixed(1)}s`;$('queueDepth').textContent=num(queue.queue_length);$('completed').textContent=num(data.total_batches);$('avgLatency').textContent=num(metrics.avg_latency_ms||queue.avg_latency_ms).toFixed(2);$('p95Latency').textContent=num(metrics.p95_latency_ms||queue.p95_latency_ms).toFixed(2);$('gpuBar').style.width=`${gpu}%`;$('gpuBarText').textContent=`${gpu}%`;$('computeBar').style.width=`${compute}%`;$('computeBarText').textContent=`${compute}%`;$('vramBar').style.width=`${Math.min(100,memoryPct)}%`;$('vramText').textContent=`${memory.toFixed(1)} MB`;$('bandwidthBar').style.width=`${Math.min(100,bandwidth/1e3*100)}%`;$('bandwidthText').textContent=bandwidth?`${bandwidth.toFixed(1)} GB/s`:'--';$('gpuInfo').innerHTML=`<b>${gpuInfo.name||data.selected_gpu||'--'}</b><br>${num(gpuInfo.memory_gb).toFixed(1)} GB memory · ${num(gpuInfo.compute_profile_count)} compute profiles`;$('modelInfo').innerHTML=`<b>${modelInfo.display_name||'--'}</b><br>${modelInfo.description||''}<br>${modelInfo.layers||'--'} layers · ${modelInfo.use_case||''}`;const log=(data.per_request||[]).slice(-6).map(x=>{const ms=num(x.latency_ms),cls=ms<50?'':ms<150?'medium':'slow';return `<div class="${cls}">Batch ${x.request_id||'--'} — ${(ms/1000).toFixed(3)}s — ${new Date(num(x.end_time)*1000||Date.now()).toLocaleTimeString()}</div>`}).join('');$('eventLog').innerHTML=log||'Waiting for event data...';updateCharts(data)}
 async function refresh(){try{const r=await fetch('/api/metrics',{cache:'no-store'});render(await r.json())}catch(e){$('statusText').textContent='OFFLINE'}}
 async function post(path,payload){await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});refresh()}
-$('gpuSelector').addEventListener('change',e=>post('/api/set_gpu',{gpu:e.target.value}));$('modelSelector').addEventListener('change',e=>post('/api/set_model',{model:e.target.value}));$('startRun').addEventListener('click',()=>post('/api/start_new_run',{}));refresh();setInterval(refresh,1000);
+if($('gpuSelector'))$('gpuSelector').addEventListener('change',e=>{post('/api/set_gpu',{gpu:e.target.value});loadModelTimings(e.target.value)});
+if($('modelSelector'))$('modelSelector').addEventListener('change',e=>post('/api/set_model',{model:e.target.value}));
+if($('startRun'))$('startRun').addEventListener('click',()=>post('/api/start_new_run',{}));
+if($('profileModel'))$('profileModel').addEventListener('change',e=>loadProfiler(e.target.value));
+loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();refresh();setInterval(refresh,1000);
 </script></body></html>
 """
 
@@ -2584,6 +2607,199 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   return enriched
 
 
+GPU_COMPARISON_ORDER = [
+  'NVIDIA_A100-SXM4-40GB', 'Quadro_RTX_6000', 'Tesla_K80',
+  'Tesla_M40', 'Tesla_P100-PCIE-16GB', 'Tesla_V100-PCIE-32GB',
+]
+MODEL_LIST = [
+  'alexnet', 'densenet121', 'densenet161', 'densenet169', 'densenet201',
+  'googlenet', 'mnasnet0_5', 'mnasnet0_75', 'mnasnet1_0', 'mnasnet1_3',
+  'mobilenet_v2', 'mobilenet_v3_large', 'mobilenet_v3_small',
+  'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152',
+  'resnext50_32x4d', 'resnext101_32x8d', 'shufflenet_v2_x0_5',
+  'shufflenet_v2_x1_0', 'shufflenet_v2_x1_5', 'shufflenet_v2_x2_0',
+  'squeezenet1_0', 'squeezenet1_1', 'vgg11', 'vgg11_bn', 'vgg13',
+  'vgg13_bn', 'vgg16', 'vgg16_bn', 'vgg19', 'vgg19_bn',
+  'wide_resnet50_2', 'wide_resnet101_2',
+]
+
+
+def _profile_csv_value(path: str, batch: int, value_column: str) -> Optional[float]:
+  rows = _read_csv_rows(path)
+  candidates = []
+  for row in rows:
+    try:
+      candidates.append((abs(float(row.get('Batch_Size', row.get('batch_size', 0))) - batch), row))
+    except (TypeError, ValueError):
+      continue
+  if not candidates:
+    return None
+  row = min(candidates, key=lambda item: item[0])[1]
+  try:
+    return float(row[value_column])
+  except (KeyError, TypeError, ValueError):
+    return None
+
+
+def _real_compute_ms(gpu: str, model: str, batch: int = 32) -> Optional[float]:
+  path = os.path.join(PROFILED_DATA_ROOT, 'time', 'compute', 'forward', gpu, model, 'time_by_batch_size.csv')
+  value = _profile_csv_value(path, batch, 'Time_In_SECONDS')
+  return value * 1000.0 if value is not None else None
+
+
+def _real_memory_mb(gpu: str, model: str, batch: int = 32) -> Optional[float]:
+  path = os.path.join(PROFILED_DATA_ROOT, 'memory', gpu, model, 'memory.csv')
+  return _profile_csv_value(path, batch, 'peak')
+
+
+def _percentile(values: List[float], percentile: float) -> float:
+  if not values:
+    return 0.0
+  ordered = sorted(values)
+  index = max(0, min(len(ordered) - 1, int(round((len(ordered) - 1) * percentile))))
+  return ordered[index]
+
+
+def _jains_index(values: List[float]) -> float:
+  if not values:
+    return 1.0
+  total = sum(values)
+  denominator = len(values) * sum(value * value for value in values)
+  return (total * total / denominator) if denominator else 1.0
+
+
+def _run_scheduler_comparison() -> Dict[str, Dict[str, float]]:
+  try:
+    from .engine import InferenceEngine
+  except ImportError:
+    from glide.engine import InferenceEngine
+  results = {}
+  previous = InferenceEngine._skip_sleep
+  InferenceEngine._skip_sleep = True
+  try:
+    for scheduler_name in ('fifo', 'sjf', 'hasp'):
+      started = time.perf_counter()
+      engine = InferenceEngine(gpu='Tesla_V100-PCIE-32GB', model='resnet50', scheduler=scheduler_name)
+      engine._skip_sleep = True
+      for _ in range(20):
+        engine.submit_request(batch_size=32)
+      engine.run_queue()
+      elapsed = max(time.perf_counter() - started, 1e-9)
+      latencies = [float(request.latency_ms or 0.0) for request in engine.completed_requests]
+      results[scheduler_name] = {
+        'avg_latency_ms': statistics.mean(latencies) if latencies else 0.0,
+        'p95_latency_ms': _percentile(latencies, 0.95),
+        'throughput': len(latencies) / elapsed,
+        'jains_fairness_index': _jains_index(latencies),
+        'starvation_count': sum(1 for value in latencies if value > (statistics.mean(latencies) * 3)) if latencies else 0,
+        'requests': [request.to_dict() for request in engine.completed_requests[:5]],
+      }
+  finally:
+    InferenceEngine._skip_sleep = previous
+  return results
+
+
+def _run_real_experiments() -> Dict[str, Any]:
+  try:
+    from .engine import InferenceEngine
+    from .workload import WorkloadGenerator
+  except ImportError:
+    from glide.engine import InferenceEngine
+    from glide.workload import WorkloadGenerator
+  models = ['resnet18', 'resnet50', 'alexnet']
+  configs = [
+    ('single_uniform', ['resnet50'], 'uniform'),
+    ('single_poisson', ['resnet50'], 'poisson'),
+    ('multi_uniform', models, 'uniform'),
+    ('multi_bursty', models, 'bursty'),
+  ]
+  output = {}
+  for name, experiment_models, mode in configs:
+    trace = WorkloadGenerator(experiment_models, mode, 2.0, 15.0, seed=42).generate()
+    output[name] = {'trace': trace, 'schedulers': {}}
+    for scheduler_name in ('fifo', 'sjf', 'hasp'):
+      engine = InferenceEngine(gpu='Tesla_V100-PCIE-32GB', model=experiment_models[0], scheduler=scheduler_name)
+      engine._skip_sleep = True
+      for item in trace:
+        engine.submit_request(model_name=item['model_name'], batch_size=item['batch_size'], priority=item['priority'])
+      started = time.perf_counter()
+      engine.run_queue()
+      elapsed = max(time.perf_counter() - started, 1e-9)
+      latencies = [float(request.latency_ms or 0.0) for request in engine.completed_requests]
+      average = statistics.mean(latencies) if latencies else 0.0
+      output[name]['schedulers'][scheduler_name] = {
+        'avg_latency_ms': average, 'p95_latency_ms': _percentile(latencies, .95),
+        'throughput': len(latencies) / elapsed, 'jains_fairness_index': _jains_index(latencies),
+        'starvation_count': sum(1 for value in latencies if value > average * 3) if latencies else 0,
+      }
+  return output
+
+
+@app.route('/api/gpu_comparison')
+def api_gpu_comparison():
+  values = []
+  for gpu in GPU_COMPARISON_ORDER:
+    compute = _real_compute_ms(gpu, 'resnet50')
+    memory = _real_memory_mb(gpu, 'resnet50')
+    if compute is not None:
+      values.append({'gpu': gpu, 'compute_ms': compute, 'memory_mb': memory or 0.0})
+  return jsonify(sorted(values, key=lambda item: item['compute_ms']))
+
+
+@app.route('/api/model_timings')
+def api_model_timings():
+  gpu = _normalize_gpu(request.args.get('gpu', 'Tesla_V100-PCIE-32GB'))
+  values = []
+  for model in MODEL_LIST:
+    compute = _real_compute_ms(gpu, model)
+    if compute is not None:
+      family = 'resnet' if model.startswith('res') else 'vgg' if model.startswith('vgg') else 'densenet' if model.startswith('dense') else 'others'
+      values.append({'model': model, 'compute_ms': compute, 'family': family})
+  return jsonify(sorted(values, key=lambda item: item['compute_ms'], reverse=True))
+
+
+@app.route('/api/profiler_results')
+def api_profiler_results():
+  model = _normalize_model(request.args.get('model', 'resnet18'))
+  if not os.path.exists(os.path.join(GLIDE_DIR, 'layer_db.sqlite')):
+    return jsonify([])
+  conn = sqlite3.connect(os.path.join(GLIDE_DIR, 'layer_db.sqlite'))
+  rows = conn.execute('SELECT layer_type, config, compute_cost_ms, memory_cost_mb FROM layers WHERE model=? ORDER BY compute_cost_ms DESC', (model,)).fetchall()
+  conn.close()
+  total = sum(float(row[2] or 0.0) for row in rows)
+  return jsonify([{'layer_type': row[0], 'config': row[1], 'compute_cost_ms': row[2], 'memory_cost_mb': row[3], 'pct_of_total': (float(row[2] or 0.0) / total * 100.0) if total else 0.0} for row in rows])
+
+
+@app.route('/api/scheduler_comparison')
+def api_scheduler_comparison():
+  return jsonify(_run_scheduler_comparison())
+
+
+@app.route('/api/experiment_results')
+def api_experiment_results_real():
+  cache_path = os.path.join(GLIDE_DIR, 'experiment_cache.json')
+  if os.path.exists(cache_path):
+    try:
+      with open(cache_path, 'r', encoding='utf-8') as cache_file:
+        return jsonify(json.load(cache_file))
+    except (OSError, json.JSONDecodeError):
+      pass
+  results = _run_real_experiments()
+  with open(cache_path, 'w', encoding='utf-8') as cache_file:
+    json.dump(results, cache_file, indent=2)
+  return jsonify(results)
+
+
+@app.route('/api/layer_profiler_run')
+def api_layer_profiler_run():
+  try:
+    from .profiler import profile_and_save
+  except ImportError:
+    from glide.profiler import profile_and_save
+  model = _normalize_model(request.args.get('model', 'resnet18'))
+  return jsonify(sorted(profile_and_save(model, 'CPU_measured', batch_size=32, num_runs=3), key=lambda item: item.get('compute_time_ms', 0.0), reverse=True))
+
+
 @app.route('/')
 def dashboard() -> str:
   return render_template_string(DASHBOARD_HTML)
@@ -2593,19 +2809,6 @@ def dashboard() -> str:
 def api_metrics():
   data = _load_metrics_file()
   return jsonify(_enrich_metrics(data))
-
-
-@app.route('/api/experiment_results')
-def api_experiment_results():
-  results_path = os.path.join(os.path.dirname(METRICS_PATH), 'experiment_results.json')
-  if not os.path.exists(results_path):
-    return jsonify({})
-  try:
-    with open(results_path, 'r', encoding='utf-8') as results_file:
-      data = json.load(results_file)
-    return jsonify(data if isinstance(data, dict) else {})
-  except (OSError, json.JSONDecodeError):
-    return jsonify({})
 
 
 @app.route('/api/set_model', methods=['POST'])
