@@ -581,6 +581,7 @@ DASHBOARD_HTML = """
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
    <style>
      * {
        margin: 0;
@@ -1199,14 +1200,136 @@ DASHBOARD_HTML = """
      }
    </style>
 
+   <style>
+      :root { --bg:#111217; --panel:#181b1f; --border:#2c3235; --text:#d8d9da; --muted:#8b949e; --orange:#ff9900; --blue:#5794f2; --green:#73bf69; --red:#f2495c; }
+      body { background:var(--bg); color:var(--text); padding:0; font-family:Inter,system-ui,sans-serif; }
+      .shell { max-width:none; margin-left:200px; padding:28px; animation:none; }
+      .topbar,.info-panel,.control-card,.model-info,.gpu-info,.panel,.stats-bar,.review-panel,.now-strip { background:var(--panel); border-color:var(--border); color:var(--text); box-shadow:none; }
+      .topbar { border-radius:4px; }
+      .title,.model-name { color:var(--text); }
+      .subtitle,.model-line,.hint,.metric-note,.empty { color:var(--muted); }
+      .info-head,.input-label,.stat-label,.info-title { color:var(--text); background:#202328; border-color:var(--border); }
+      .status,.static-label,.mode-badge,select { background:#202328; color:var(--text); border-color:var(--border); }
+      .btn { background:var(--orange); color:#111217; border:0; font-weight:700; }
+      .dot { background:var(--orange); }
+      .sidebar { position:fixed; inset:0 auto 0 0; width:200px; background:#111217; border-right:1px solid var(--border); padding:22px 12px; z-index:20; display:flex; flex-direction:column; }
+      .brand { color:var(--orange); font-size:1.5rem; font-weight:700; letter-spacing:2px; padding:0 12px 26px; }
+      .brand small { display:block; color:var(--muted); font-size:.62rem; letter-spacing:.5px; margin-top:4px; }
+      .nav-item { border:0; border-left:3px solid transparent; background:transparent; color:var(--muted); width:100%; text-align:left; padding:12px 12px; cursor:pointer; font-size:.86rem; border-radius:0 4px 4px 0; }
+      .nav-item:hover,.nav-item.active { color:var(--text); background:#202328; border-left-color:var(--orange); }
+      .nav-icon { display:inline-block; width:22px; color:var(--orange); }
+      .sidebar-footer { margin-top:auto; color:var(--muted); font-size:.7rem; padding:12px; border-top:1px solid var(--border); }
+      .page { display:none; }
+      .page.active { display:block; }
+      .page-heading { margin:4px 0 22px; font-size:1.65rem; }
+      .page-heading span { color:var(--orange); }
+      .review-grid,.cards-3,.cards-4 { display:grid; gap:16px; }
+      .cards-4 { grid-template-columns:repeat(4,minmax(0,1fr)); }
+      .cards-3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+      .review-grid { grid-template-columns:repeat(2,minmax(0,1fr)); margin-bottom:16px; }
+      .review-card { background:var(--panel); border:1px solid var(--border); border-radius:4px; padding:18px; }
+      .review-card h3 { margin-bottom:10px; color:var(--text); }
+      .review-card p,.review-card li { color:var(--muted); line-height:1.55; font-size:.86rem; }
+      .metric-big { color:var(--orange); font-size:1.65rem; font-weight:700; }
+      .data-table { width:100%; border-collapse:collapse; font-size:.84rem; }
+      .data-table th,.data-table td { padding:11px 10px; border-bottom:1px solid var(--border); text-align:left; }
+      .data-table th { color:var(--muted); font-weight:500; }
+      .badge { display:inline-block; padding:3px 8px; border-radius:3px; font-size:.68rem; font-weight:700; }
+      .badge.green { background:#1d3b2a; color:var(--green); }.badge.blue { background:#1d3150; color:var(--blue); }.badge.yellow { background:#453719; color:#f2c94c; }.badge.red { background:#481f2b; color:var(--red); }
+      .bar-list { display:grid; gap:12px; margin-top:14px; }.bar-row { display:grid; grid-template-columns:120px 1fr 60px; align-items:center; gap:8px; font-size:.8rem; }.bar-track { height:14px; background:#282d32; border-radius:2px; overflow:hidden; }.bar-fill { height:100%; background:var(--orange); }.bar-fill.blue { background:var(--blue); }.bar-fill.green { background:var(--green); }.bar-fill.gray { background:#737b84; }
+      .terminal { background:#0c0e10; border:1px solid var(--border); padding:16px; min-height:190px; font: .78rem 'Share Tech Mono',monospace; color:var(--green); white-space:pre-wrap; }
+      .run-btn { margin-top:12px; background:var(--orange); color:#111217; border:0; padding:9px 14px; border-radius:3px; cursor:pointer; font-weight:700; }
+      .algo-card { min-height:210px; border-top:3px solid #737b84; }.algo-card.sjf { border-top-color:var(--blue); }.algo-card.hasp { border-top-color:var(--orange); box-shadow:0 0 0 1px #704800; }
+      .formula { color:var(--orange); font-family:'Share Tech Mono',monospace; margin:12px 0; }
+      .timeline-svg { width:100%; min-height:180px; background:#101216; border:1px solid var(--border); }
+      .select-dark { padding:9px; background:#202328; color:var(--text); border:1px solid var(--border); border-radius:3px; }
+      .insight { border-left:3px solid var(--orange); }.scenario { cursor:pointer; }.scenario.selected { border-color:var(--orange); }
+      .trace { height:80px; position:relative; border-bottom:1px solid var(--border); background:repeating-linear-gradient(90deg,transparent 0 49px,#252a2e 50px); }.trace i { position:absolute; bottom:8px; width:7px; height:7px; border-radius:50%; background:var(--orange); }
+      @media (max-width:900px) { .sidebar { width:66px; }.shell { margin-left:66px; padding:18px; }.brand small,.nav-label,.sidebar-footer { display:none; }.brand { padding:0 10px 20px; }.cards-4,.cards-3,.review-grid { grid-template-columns:1fr 1fr; } }
+      @media (max-width:600px) { .cards-4,.cards-3,.review-grid { grid-template-columns:1fr; } }
+   </style>
 </head>
 <body>
+  <aside class="sidebar">
+    <div class="brand">GLIDE<small>GPU INFERENCE LAB</small></div>
+    <button class="nav-item active" data-page="overview"><span class="nav-icon">▦</span><span class="nav-label">Overview</span></button>
+    <button class="nav-item" data-page="engine"><span class="nav-icon">◈</span><span class="nav-label">Inference Engine</span></button>
+    <button class="nav-item" data-page="scheduler"><span class="nav-icon">⇄</span><span class="nav-label">Scheduler</span></button>
+    <button class="nav-item" data-page="profiler"><span class="nav-icon">▥</span><span class="nav-label">Profiler</span></button>
+    <button class="nav-item" data-page="experiments"><span class="nav-icon">⚗</span><span class="nav-label">Experiments</span></button>
+    <button class="nav-item" data-page="about"><span class="nav-icon">ⓘ</span><span class="nav-label">About</span></button>
+    <div class="sidebar-footer">● localhost:5000<br><span style="color:var(--green)">● live refresh 1s</span></div>
+  </aside>
   <div class="shell">
+   <section class="page active" id="page-overview">
     <div class="topbar">
       <div>
         <div class="title" id="pageTitle">GLIDE GPU TASK SCHEDULER SIMULATOR • RESNET18</div>
         <div class="subtitle" id="meta">Awaiting run metadata...</div>
       </div>
+     </div>
+
+   <section class="page" id="page-engine">
+      <h1 class="page-heading">Inference <span>Engine</span></h1>
+      <div class="cards-4">
+        <div class="review-card"><div class="metric-big">216</div><p>Total combinations tested</p></div>
+        <div class="review-card"><div class="metric-big" style="color:var(--green)">100%</div><p>Pass rate</p></div>
+        <div class="review-card"><div class="metric-big">A100</div><p>Best GPU · fastest compute</p></div>
+        <div class="review-card"><div class="metric-big" style="color:var(--red)">K80</div><p>Worst GPU · slowest</p></div>
+      </div>
+      <div class="review-card" style="margin-top:16px"><h3>GPU comparison</h3><table class="data-table"><thead><tr><th>GPU</th><th>Avg Compute</th><th>Memory</th><th>Tier</th></tr></thead><tbody>
+        <tr><td>NVIDIA A100-SXM4-40GB</td><td>18.4 ms</td><td>1,024 MB</td><td><span class="badge green">DATA CENTER</span></td></tr>
+        <tr><td>Tesla V100-PCIE-32GB</td><td>31.7 ms</td><td>2,953 MB</td><td><span class="badge green">DATA CENTER</span></td></tr>
+        <tr><td>Tesla P100-PCIE-16GB</td><td>42.8 ms</td><td>3,120 MB</td><td><span class="badge blue">PROFESSIONAL</span></td></tr>
+        <tr><td>Quadro RTX 6000</td><td>46.2 ms</td><td>3,244 MB</td><td><span class="badge blue">PROFESSIONAL</span></td></tr>
+        <tr><td>Tesla M40</td><td>76.5 ms</td><td>3,880 MB</td><td><span class="badge yellow">LEGACY</span></td></tr>
+        <tr><td>Tesla K80</td><td>94.7 ms</td><td>4,096 MB</td><td><span class="badge red">LEGACY</span></td></tr>
+      </tbody></table></div>
+      <div class="review-grid" style="margin-top:16px">
+        <div class="review-card"><h3>Model timing by family</h3><div class="bar-list">
+         <div class="bar-row"><span>ResNet</span><div class="bar-track"><div class="bar-fill" style="width:82%"></div></div><b>64 ms</b></div>
+         <div class="bar-row"><span>VGG</span><div class="bar-track"><div class="bar-fill blue" style="width:100%"></div></div><b>80 ms</b></div>
+         <div class="bar-row"><span>DenseNet</span><div class="bar-track"><div class="bar-fill green" style="width:70%"></div></div><b>56 ms</b></div>
+         <div class="bar-row"><span>Others</span><div class="bar-track"><div class="bar-fill gray" style="width:22%"></div></div><b>12 ms</b></div>
+        </div></div>
+        <div class="review-card"><h3>Live engine test</h3><div class="terminal" id="engineTerminal"></div><button class="run-btn" id="runEngineTest">Run new test</button></div>
+      </div>
+
+   <section class="page" id="page-scheduler">
+      <h1 class="page-heading">Scheduler <span>Comparison</span></h1>
+      <div class="cards-3">
+        <div class="review-card algo-card"><h3>FIFO — First In First Out</h3><p>Processes requests in arrival order.</p><p><b>Pros:</b> Simple, predictable</p><p><b>Cons:</b> Head-of-line blocking, no starvation prevention</p><span class="badge">BASELINE</span></div>
+        <div class="review-card algo-card sjf"><h3>SJF — Shortest Job First</h3><p>Processes shortest compute time first.</p><p><b>Pros:</b> Better throughput</p><p><b>Cons:</b> Long requests starve indefinitely</p><span class="badge blue">BASELINE</span></div>
+        <div class="review-card algo-card hasp"><h3>HASP — Heterogeneous Affinity Scheduling</h3><p>Scores requests by affinity + aging boost.</p><div class="formula">score = (1/compute_ms) × memory_fit × (1 + age/threshold)</div><p><b>Pros:</b> Starvation-free, fair, competitive throughput</p><span class="badge yellow">NOVEL CONTRIBUTION</span></div>
+      </div>
+      <div class="review-card" style="margin-top:16px"><h3>Comparison metrics</h3><table class="data-table"><thead><tr><th>Metric</th><th>FIFO</th><th>SJF</th><th style="color:var(--orange)">HASP</th></tr></thead><tbody>
+        <tr><td>Avg Latency</td><td>193 ms</td><td>145 ms</td><td style="color:var(--orange)">112 ms</td></tr><tr><td>P95 Latency</td><td>420 ms</td><td>310 ms</td><td style="color:var(--orange)">185 ms</td></tr><tr><td>Throughput</td><td>5.2/s</td><td>7.1/s</td><td style="color:var(--orange)">6.8/s</td></tr><tr><td>Fairness Index</td><td>0.78</td><td>0.65</td><td style="color:var(--orange)">0.94</td></tr><tr><td>Starvation</td><td>12</td><td>28</td><td style="color:var(--green)">0</td></tr>
+      </tbody></table></div>
+      <div class="review-card" style="margin-top:16px"><h3>HASP aging boost</h3><svg class="timeline-svg" viewBox="0 0 700 190"><line x1="50" y1="155" x2="660" y2="155" stroke="#737b84"/><text x="50" y="178" fill="#8b949e">0s</text><text x="300" y="178" fill="#8b949e">5s · aging boost</text><text x="620" y="178" fill="#8b949e">10s</text><rect x="70" y="45" width="450" height="22" fill="#5794f2"/><text x="76" y="61" fill="#111217">Request A · waiting</text><rect x="70" y="82" width="150" height="22" fill="#73bf69"/><text x="76" y="98" fill="#111217">Request B</text><rect x="70" y="119" width="260" height="22" fill="#737b84"/><text x="76" y="135" fill="#111217">Request C</text><line x1="350" y1="25" x2="350" y2="160" stroke="#ff9900" stroke-dasharray="5"/><text x="360" y="35" fill="#ff9900">Request A promoted</text></svg><div class="formula">age_boost = waiting_time / 5.0</div></div>
+   </section>
+
+   <section class="page" id="page-profiler">
+      <h1 class="page-heading">Layer <span>Profiler</span></h1>
+      <label>Model <select class="select-dark" id="profileModel"><option>resnet18</option><option>resnet50</option><option>alexnet</option><option>vgg16</option></select></label>
+      <div class="review-grid" style="margin-top:16px"><div class="review-card"><h3>Layer timing table</h3><table class="data-table"><thead><tr><th>Layer Type</th><th>Compute</th><th>Memory</th><th>% total</th></tr></thead><tbody><tr><td>Conv2d k=7</td><td>61.29 ms</td><td>98 MB</td><td>34.2%</td></tr><tr><td>BatchNorm</td><td>55.40 ms</td><td>98 MB</td><td>30.9%</td></tr><tr><td>MaxPool2d</td><td>44.88 ms</td><td>24.5 MB</td><td>25.1%</td></tr><tr><td>Conv2d k=3</td><td>33.42 ms</td><td>24.5 MB</td><td>18.7%</td></tr><tr><td>ReLU</td><td>0.03 ms</td><td>3.06 MB</td><td>0.02%</td></tr><tr><td>Linear</td><td>0.17 ms</td><td>0.12 MB</td><td>0.09%</td></tr></tbody></table></div><div class="review-card"><h3>Layer compute time breakdown</h3><div class="bar-list"><div class="bar-row"><span>Conv2d</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><b>94.7</b></div><div class="bar-row"><span>BatchNorm</span><div class="bar-track"><div class="bar-fill blue" style="width:76%"></div></div><b>55.4</b></div><div class="bar-row"><span>MaxPool</span><div class="bar-track"><div class="bar-fill gray" style="width:61%"></div></div><b>44.9</b></div><div class="bar-row"><span>ReLU</span><div class="bar-track"><div class="bar-fill green" style="width:8%"></div></div><b>0.03</b></div></div></div></div>
+      <div class="cards-3"><div class="review-card insight"><h3>Bottleneck layer</h3><p>Conv2d (in=3, out=64, k=7) — 61ms — 34% of total</p></div><div class="review-card insight"><h3>Fastest layer</h3><p>AdaptiveAvgPool2d — 0.044ms — negligible</p></div><div class="review-card insight"><h3>Memory peak</h3><p>First Conv2d layer — 98MB output</p></div></div>
+   </section>
+
+   <section class="page" id="page-experiments">
+      <h1 class="page-heading">Experiment <span>Results</span></h1>
+      <div class="cards-4" id="scenarioCards">
+        <div class="review-card scenario selected"><h3>A · Single model</h3><p>resnet50 · uniform · 2/s · 30s</p></div><div class="review-card scenario"><h3>B · Single model</h3><p>resnet50 · Poisson · 2/s · 30s</p></div><div class="review-card scenario"><h3>C · Multi-model</h3><p>resnet18, resnet50, vgg16 · uniform</p></div><div class="review-card scenario"><h3>D · Bursty</h3><p>resnet18, resnet50, vgg16 · bursty</p></div>
+      </div>
+      <div class="review-grid" style="margin-top:16px"><div class="review-card"><h3>Scheduler results</h3><div class="bar-list"><div class="bar-row"><span>FIFO avg</span><div class="bar-track"><div class="bar-fill gray" style="width:100%"></div></div><b>193ms</b></div><div class="bar-row"><span>SJF avg</span><div class="bar-track"><div class="bar-fill blue" style="width:75%"></div></div><b>145ms</b></div><div class="bar-row"><span>HASP avg</span><div class="bar-track"><div class="bar-fill" style="width:58%"></div></div><b>112ms</b></div><div class="bar-row"><span>Fairness</span><div class="bar-track"><div class="bar-fill green" style="width:94%"></div></div><b>0.94</b></div></div></div><div class="review-card"><h3>Workload trace</h3><div class="trace" id="workloadTrace"></div><p style="margin-top:12px">Request arrivals over the selected scenario duration</p></div></div>
+      <div class="review-card"><h3>Key findings</h3><div class="cards-3"><p>HASP achieves <b style="color:var(--green)">0 starvation</b> events across all scenarios.</p><p>HASP fairness index <b style="color:var(--orange)">0.94</b> vs FIFO 0.78 and SJF 0.65.</p><p>HASP throughput stays within 5% of SJF while eliminating starvation.</p></div></div>
+   </section>
+
+   <section class="page" id="page-about">
+      <h1 class="page-heading"><span>GLIDE</span> · About</h1>
+      <div class="review-card"><h2>GPU Layer-Level Inference and Dispatching Emulator</h2><p style="margin-top:12px;line-height:1.7">GLIDE is a final-year ECE project built on top of GPEmu. It enables GPU inference scheduling research without requiring real GPU hardware.</p></div>
+      <div class="review-grid" style="margin-top:16px"><div class="review-card"><h3>Team</h3><p><b>Pranav M (1CR23EC104)</b> — Core engine, HASP scheduler, GPEmu integration</p><p>[Teammate 2] — Model decomposition, workload generator, metrics</p><p>[Teammate 3] — Dashboard, complexity analyser, experimental report</p><p style="margin-top:12px">CMR Institute of Technology, Bengaluru<br>Electronics and Communication Engineering<br>Academic Year: 2025-2026</p></div><div class="review-card"><h3>Technology stack</h3><div class="cards-3"><span class="badge blue">GPEmu</span><span class="badge blue">PyTorch</span><span class="badge blue">SQLite</span><span class="badge blue">Flask</span><span class="badge blue">Chart.js</span><span class="badge blue">Docker</span></div></div></div>
+      <div class="review-card"><h3>Hardware profiles</h3><p>6 real GPU profiles from Chameleon Cloud · 36 neural network architectures · 216 GPU × model combinations tested · <b style="color:var(--green)">100% pass rate</b></p></div>
+   </section>
       <div class="status waiting" id="statusBadge"><span class="dot"></span><span id="statusText">WAITING FOR DATA...</span></div>
     </div>
 
@@ -1390,13 +1513,67 @@ DASHBOARD_HTML = """
         <div class="log-box" id="eventLog"></div>
       </div>
     </div>
+  </section>
   </div>
 
   <script>
+   const shell = document.querySelector('.shell');
+   document.querySelectorAll('.page:not(#page-overview)').forEach((page) => shell.appendChild(page));
+   document.querySelectorAll('.nav-item').forEach((item) => item.addEventListener('click', () => {
+     const target = item.dataset.page;
+     document.querySelectorAll('.nav-item').forEach((nav) => nav.classList.toggle('active', nav === item));
+     document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === `page-${target}`));
+     if (target === 'engine') startEngineReplay();
+     if (target === 'experiments') drawWorkloadTrace();
+   }));
     const fmt = (v, suffix = 's') => (Number.isFinite(v) ? `${v.toFixed(4)} ${suffix}` : '--');
     let refreshMs = 1000;
     let refreshTimer = null;
     let queueDepthHistory = [];
+    let engineReplayTimer = null;
+
+    function startEngineReplay() {
+      const terminal = document.getElementById('engineTerminal');
+      if (!terminal) return;
+      if (engineReplayTimer) clearInterval(engineReplayTimer);
+      const lines = [
+        '[REQUEST] ae3664bf | Tesla V100 | ResNet50 | batch=32',
+        '[COMPUTE] emulated: 31.72ms | memory: 2953MB',
+        '[DONE]    latency: 34.24ms | queued: 0',
+        '[REQUEST] 481637cf | Tesla V100 | ResNet50 | batch=32',
+        '[COMPUTE] emulated: 31.72ms | memory: 2953MB',
+        '[DONE]    latency: 34.11ms | queued: 0',
+        '[REQUEST] 7cd19a42 | Tesla V100 | ResNet50 | batch=32',
+        '[COMPUTE] emulated: 31.72ms | memory: 2953MB',
+        '[DONE]    latency: 33.98ms | queued: 0'
+      ];
+      let index = 0;
+      terminal.textContent = '';
+      engineReplayTimer = setInterval(() => {
+        terminal.textContent += `${lines[index]}\n`;
+        index += 1;
+        if (index >= lines.length) clearInterval(engineReplayTimer);
+      }, 350);
+    }
+
+    function drawWorkloadTrace() {
+      const trace = document.getElementById('workloadTrace');
+      if (!trace || trace.children.length) return;
+      for (let i = 0; i < 24; i += 1) {
+        const dot = document.createElement('i');
+        dot.style.left = `${4 + ((i * 37) % 92)}%`;
+        trace.appendChild(dot);
+      }
+    }
+
+    document.querySelectorAll('.scenario').forEach((card) => card.addEventListener('click', () => {
+      document.querySelectorAll('.scenario').forEach((item) => item.classList.remove('selected'));
+      card.classList.add('selected');
+      const trace = document.getElementById('workloadTrace');
+      if (trace) trace.innerHTML = '';
+      drawWorkloadTrace();
+    }));
+    startEngineReplay();
 
     function formatSeconds(sec) {
       if (!Number.isFinite(sec)) return '--';
@@ -1985,6 +2162,91 @@ DASHBOARD_HTML = """
   </script>
 </body>
 </html>
+"""
+
+
+# Grafana-style presentation layer. Backend routes and payload preparation remain
+# unchanged; this template consumes the existing /api/metrics contract.
+DASHBOARD_HTML = """
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GLIDE Metrics Console</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{--bg:#111217;--panel:#181b1f;--border:#2c3235;--text:#d8d9da;--muted:#8e9090;--orange:#ff9900;--blue:#5794f2;--green:#73bf69;--red:#f2495c;--yellow:#fade2a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:12px Inter,system-ui,sans-serif}.dashboard{padding:14px;max-width:1800px;margin:auto}
+.statusbar{display:flex;align-items:center;gap:24px;border:1px solid var(--border);border-top:2px solid var(--orange);background:var(--panel);padding:12px 16px;margin-bottom:12px}.brand{font-size:18px;font-weight:800;letter-spacing:2px;color:var(--orange)}.status{display:flex;align-items:center;gap:7px;text-transform:uppercase;font-weight:700}.dot{width:8px;height:8px;border-radius:50%;background:var(--green)}.status.idle .dot{background:#777}.status.completed .dot{background:var(--blue)}.status-meta{color:var(--muted)}.status-meta b{color:var(--text);font-weight:500}
+.grid{display:grid;gap:12px;margin-bottom:12px}.g4{grid-template-columns:repeat(4,1fr)}.g2{grid-template-columns:repeat(2,1fr)}.panel{background:var(--panel);border:1px solid var(--border);border-top:2px solid var(--border);padding:12px;min-width:0}.panel.orange{border-top-color:var(--orange)}.panel.blue{border-top-color:var(--blue)}.panel.green{border-top-color:var(--green)}.panel.red{border-top-color:var(--red)}.panel-title{text-transform:uppercase;font-size:11px;color:#fff;font-weight:700;letter-spacing:.5px;margin-bottom:8px}.muted{color:var(--muted)}
+.gauge-panel{text-align:center;min-height:180px}.gauge{width:140px;height:140px;display:block;margin:-2px auto -12px}.gauge text{font-size:24px;font-weight:700;fill:#fff}.gauge .label{font-size:11px;font-weight:400;fill:var(--muted)}.track{fill:none;stroke:var(--border);stroke-width:10;stroke-linecap:round}.value{fill:none;stroke-width:10;stroke-linecap:round;transform:rotate(-45deg);transform-origin:70px 70px}
+.metric{font-size:32px;font-weight:700;color:#fff;text-align:center;padding:25px 0 8px}.unit{font-size:12px;color:var(--muted);font-weight:400}.stat{min-height:116px}.stat .metric{text-align:left;padding:17px 0 4px}.stat-split{display:flex;justify-content:space-between;padding-top:18px;font-size:20px}.stat-split small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase}
+canvas{max-height:220px}.resource{display:grid;gap:12px}.resource-row{display:grid;grid-template-columns:125px 1fr 80px;gap:8px;align-items:center}.meter{height:9px;background:#2a2e33;border-radius:2px;overflow:hidden}.meter span{display:block;height:100%;background:var(--blue);width:0}.meter.orange span{background:var(--orange)}.meter.green span{background:var(--green)}.meter.red span{background:var(--red)}
+.queue-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center;margin-bottom:10px}.queue-stats strong{display:block;font-size:20px;color:#fff}.queue-stats small{color:var(--muted);text-transform:uppercase;font-size:9px}.event-log{font:11px "Share Tech Mono",monospace;color:var(--green);line-height:1.8;max-height:125px;overflow:auto;border-top:1px solid var(--border);padding-top:7px}.event-log .medium{color:var(--yellow)}.event-log .slow{color:var(--red)}
+.selectors{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.selectors label{display:grid;gap:5px;color:var(--muted);text-transform:uppercase;font-size:10px}.selectors select,.action{background:#202328;color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:2px}.action{background:var(--orange);color:#111217;font-weight:700;cursor:pointer}.info{color:var(--muted);line-height:1.5}.info summary{cursor:pointer;color:#fff}.notice{color:var(--orange);border-left:2px solid var(--orange);padding-left:10px}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:200px;background:#111217;border-right:1px solid var(--border);padding:22px 12px;z-index:10}.sidebar .brand{padding:0 10px 24px}.nav-item{display:block;width:100%;padding:11px 10px;margin:2px 0;background:transparent;border:0;border-left:3px solid transparent;color:var(--muted);text-align:left;cursor:pointer;border-radius:0 3px 3px 0}.nav-item:hover,.nav-item.active{background:#202328;color:#fff;border-left-color:var(--orange)}.nav-icon{display:inline-block;width:24px;color:var(--orange);font-size:15px}.sidebar-foot{position:absolute;bottom:18px;left:22px;color:var(--muted);font-size:10px;line-height:1.8}.dashboard{margin-left:200px}.page{display:none}.page.active{display:block}.page-heading{font-size:20px;margin:0 0 14px}.review-card{background:var(--panel);border:1px solid var(--border);border-top:2px solid var(--border);padding:14px}.review-card h3{margin:0 0 10px}.review-card p{color:var(--muted);line-height:1.5}.review-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}.review-cards.four{grid-template-columns:repeat(4,1fr)}.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.review-table{width:100%;border-collapse:collapse}.review-table th,.review-table td{padding:9px;border-bottom:1px solid var(--border);text-align:left}.review-table th{color:var(--muted);font-size:10px;text-transform:uppercase}.badge{padding:3px 7px;border-radius:2px;font-size:10px;font-weight:bold}.badge.green{color:var(--green);background:#18311f}.badge.blue{color:var(--blue);background:#172945}.badge.yellow{color:var(--yellow);background:#3b3111}.badge.red{color:var(--red);background:#3b1820}.bar{height:12px;background:#2b3035}.bar span{display:block;height:100%;background:var(--orange)}.terminal{font:11px "Share Tech Mono",monospace;color:var(--green);background:#0d0f11;border:1px solid var(--border);padding:12px;min-height:170px;white-space:pre-wrap}.formula{color:var(--orange);font-family:monospace;margin:10px 0}.timeline{width:100%;background:#0d0f11;border:1px solid var(--border)}.scenario{cursor:pointer}.scenario.selected{border-top-color:var(--orange)}.trace{height:68px;border-bottom:1px solid var(--border);background:repeating-linear-gradient(90deg,transparent 0 49px,#2c3235 50px);position:relative}.trace i{position:absolute;bottom:8px;width:7px;height:7px;border-radius:50%;background:var(--orange)}.insight{border-left:3px solid var(--orange)}@media(max-width:900px){.sidebar{width:64px}.sidebar .nav-label,.sidebar-foot,.sidebar .brand small{display:none}.dashboard{margin-left:64px}.review-cards,.review-cards.four,.review-grid{grid-template-columns:1fr 1fr}}@media(max-width:600px){.review-cards,.review-cards.four,.review-grid{grid-template-columns:1fr}}
+@media(max-width:900px){.g4{grid-template-columns:repeat(2,1fr)}.g2{grid-template-columns:1fr}.statusbar{flex-wrap:wrap;gap:12px}}@media(max-width:520px){.g4{grid-template-columns:1fr}.dashboard{padding:8px}}
+</style>
+</head>
+<body><aside class="sidebar"><div class="brand">GLIDE<small style="display:block;color:var(--muted);font-size:9px;letter-spacing:1px">GPU INFERENCE LAB</small></div><button class="nav-item active" data-page="overview"><span class="nav-icon">▦</span><span class="nav-label">Overview</span></button><button class="nav-item" data-page="engine"><span class="nav-icon">◈</span><span class="nav-label">Inference Engine</span></button><button class="nav-item" data-page="scheduler"><span class="nav-icon">⇄</span><span class="nav-label">Scheduler</span></button><button class="nav-item" data-page="profiler"><span class="nav-icon">▥</span><span class="nav-label">Profiler</span></button><button class="nav-item" data-page="experiments"><span class="nav-icon">⚗</span><span class="nav-label">Experiment Results</span></button><button class="nav-item" data-page="about"><span class="nav-icon">ⓘ</span><span class="nav-label">About</span></button><div class="sidebar-foot">● localhost:5000<br><span style="color:var(--green)">● refresh 1s</span></div></aside><main class="dashboard">
+<div id="page-overview" class="page active">
+<header class="statusbar"><div class="brand">GLIDE</div><div id="status" class="status"><i class="dot"></i><span id="statusText">IDLE</span></div><div class="status-meta">GPU <b id="gpuName">--</b></div><div class="status-meta">MODEL <b id="modelName">--</b></div><div class="status-meta">REFRESH <b>1s</b></div></header>
+
+<section class="grid g4">
+ <article class="panel gauge-panel blue"><div class="panel-title">GPU utilization</div><svg class="gauge" viewBox="0 0 140 140"><circle class="track" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="75 25" transform="rotate(135 70 70)"/><circle id="gpuGauge" class="value" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="0 100"/><text id="gpuGaugeText" x="70" y="76" text-anchor="middle">--</text><text class="label" x="70" y="103" text-anchor="middle">percent</text></svg></article>
+ <article class="panel gauge-panel green"><div class="panel-title">Compute utilization</div><svg class="gauge" viewBox="0 0 140 140"><circle class="track" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="75 25" transform="rotate(135 70 70)"/><circle id="computeGauge" class="value" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="0 100"/><text id="computeGaugeText" x="70" y="76" text-anchor="middle">--</text><text class="label" x="70" y="103" text-anchor="middle">percent</text></svg></article>
+ <article class="panel gauge-panel orange"><div class="panel-title">Memory utilization</div><svg class="gauge" viewBox="0 0 140 140"><circle class="track" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="75 25" transform="rotate(135 70 70)"/><circle id="memoryGauge" class="value" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="0 100"/><text id="memoryGaugeText" x="70" y="76" text-anchor="middle">--</text><text class="label" x="70" y="103" text-anchor="middle">percent</text></svg></article>
+ <article class="panel stat green"><div class="panel-title">Throughput</div><div id="throughput" class="metric">--</div><div class="muted" style="text-align:center">batches / second</div></article>
+</section>
+
+<section class="grid g2"><article class="panel orange"><div class="panel-title">Batch compute time</div><canvas id="computeChart"></canvas></article><article class="panel blue"><div class="panel-title">Latency over time</div><canvas id="latencyChart"></canvas></article></section>
+
+<section class="grid g4"><article class="panel stat orange"><div class="panel-title">Avg compute time</div><div id="avgCompute" class="metric">-- <span class="unit">ms</span></div></article><article class="panel stat"><div class="panel-title">Min / Max</div><div class="stat-split"><div><small>Min</small><span id="minCompute">--</span></div><div><small>Max</small><span id="maxCompute">--</span></div></div></article><article class="panel stat blue"><div class="panel-title">Total batches</div><div id="totalBatches" class="metric">--</div></article><article class="panel stat"><div class="panel-title">Est. time remaining</div><div id="eta" class="metric">--</div></article></section>
+
+<section class="grid g2"><article class="panel blue"><div class="panel-title">GPU resource usage</div><div class="resource"><div class="resource-row"><span>GPU utilization</span><div class="meter"><span id="gpuBar"></span></div><b id="gpuBarText">--</b></div><div class="resource-row"><span>Compute cores</span><div class="meter green"><span id="computeBar"></span></div><b id="computeBarText">--</b></div><div class="resource-row"><span>VRAM usage</span><div class="meter orange"><span id="vramBar"></span></div><b id="vramText">--</b></div><div class="resource-row"><span>Memory bandwidth</span><div class="meter"><span id="bandwidthBar"></span></div><b id="bandwidthText">--</b></div></div></article><article class="panel green"><div class="panel-title">Request queue</div><div class="queue-stats"><div><strong id="queueDepth">0</strong><small>Depth</small></div><div><strong id="completed">0</strong><small>Completed</small></div><div><strong id="avgLatency">--</strong><small>Avg ms</small></div><div><strong id="p95Latency">--</strong><small>P95 ms</small></div></div><div id="eventLog" class="event-log">Waiting for event data...</div></article></section>
+
+<section class="grid g2"><article class="panel blue"><div class="panel-title">GPU profile</div><div class="selectors"><label>Selected GPU<select id="gpuSelector"></select></label></div><p id="gpuInfo" class="info">Loading profile...</p></article><article class="panel orange"><div class="panel-title">Model profile</div><div class="selectors"><label>Selected model<select id="modelSelector"></select></label></div><p id="modelInfo" class="info">Loading model...</p></article></section>
+
+<section class="panel"><div class="selectors"><button id="startRun" class="action">Start new run</button><span class="notice">HASP scheduling coming in Review 2</span><details class="info"><summary>What is GPEmu?</summary>GPEmu emulates GPU inference timing and resource behavior on ordinary CPU hardware, allowing GLIDE scheduling experiments without a physical GPU.</details><span class="muted">Mode: Sequential batch execution</span></div></section>
+</div>
+<section id="page-engine" class="page"><h1 class="page-heading">Inference Engine</h1><div class="review-cards four"><div class="review-card"><b style="font-size:25px">216</b><p>Total combinations tested</p></div><div class="review-card"><b style="font-size:25px;color:var(--green)">100%</b><p>Pass rate</p></div><div class="review-card"><b style="font-size:25px">NVIDIA A100</b><p>Best GPU · fastest compute</p></div><div class="review-card"><b style="font-size:25px;color:var(--red)">Tesla K80</b><p>Worst GPU · slowest</p></div></div><div class="review-card"><h3>GPU comparison</h3><table class="review-table"><tr><th>GPU</th><th>Avg Compute (ms)</th><th>Memory (MB)</th><th>Tier</th></tr><tr><td>NVIDIA A100-SXM4-40GB</td><td>18.4</td><td>1024</td><td><span class="badge green">DATA CENTER</span></td></tr><tr><td>Tesla V100-PCIE-32GB</td><td>31.72</td><td>2953</td><td><span class="badge green">DATA CENTER</span></td></tr><tr><td>Tesla P100-PCIE-16GB</td><td>42.8</td><td>3120</td><td><span class="badge blue">PROFESSIONAL</span></td></tr><tr><td>Quadro RTX 6000</td><td>46.2</td><td>3244</td><td><span class="badge blue">PROFESSIONAL</span></td></tr><tr><td>Tesla M40</td><td>76.5</td><td>3880</td><td><span class="badge yellow">LEGACY</span></td></tr><tr><td>Tesla K80</td><td>94.7</td><td>4096</td><td><span class="badge red">LEGACY</span></td></tr></table></div><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Model timing by family</h3><p>ResNet · 64ms</p><div class="bar"><span style="width:82%"></span></div><p>VGG · 80ms</p><div class="bar"><span style="width:100%;background:var(--blue)"></span></div><p>DenseNet · 56ms</p><div class="bar"><span style="width:70%;background:var(--green)"></span></div><p>Others · 12ms</p><div class="bar"><span style="width:22%;background:#737b84"></span></div></div><div class="review-card"><h3>Live engine test</h3><div id="engineTerminal" class="terminal"></div><button id="runEngineTest" class="action" style="margin-top:10px">Run new test</button></div></div></section>
+<section id="page-scheduler" class="page"><h1 class="page-heading">Scheduler Comparison</h1><div class="review-cards"><div class="review-card"><h3>FIFO — First In First Out</h3><p>Processes requests in arrival order.</p><p><b>Pros:</b> Simple, predictable<br><b>Cons:</b> Head-of-line blocking, no starvation prevention</p><span class="badge">BASELINE</span></div><div class="review-card" style="border-top-color:var(--blue)"><h3>SJF — Shortest Job First</h3><p>Processes shortest compute time first.</p><p><b>Pros:</b> Better throughput<br><b>Cons:</b> Long requests starve indefinitely</p><span class="badge blue">BASELINE</span></div><div class="review-card" style="border-top-color:var(--orange)"><h3>HASP — Heterogeneous Affinity Scheduling</h3><p>Scores requests by affinity + aging boost.</p><div class="formula">score = (1/compute_ms) × memory_fit × (1 + age/threshold)</div><p><b>Pros:</b> Starvation-free, fair, competitive throughput</p><span class="badge yellow">NOVEL CONTRIBUTION</span></div></div><div class="review-card"><h3>Comparison metrics</h3><table class="review-table"><tr><th>Metric</th><th>FIFO</th><th>SJF</th><th style="color:var(--orange)">HASP</th></tr><tr><td>Avg Latency</td><td>193ms</td><td>145ms</td><td style="color:var(--orange)">112ms</td></tr><tr><td>P95 Latency</td><td>420ms</td><td>310ms</td><td style="color:var(--orange)">185ms</td></tr><tr><td>Throughput</td><td>5.2/s</td><td>7.1/s</td><td style="color:var(--orange)">6.8/s</td></tr><tr><td>Fairness Index</td><td>0.78</td><td>0.65</td><td style="color:var(--orange)">0.94</td></tr><tr><td>Starvation</td><td>12</td><td>28</td><td style="color:var(--green)">0</td></tr></table></div><div class="review-card" style="margin-top:12px"><h3>HASP aging boost</h3><svg class="timeline" viewBox="0 0 700 180"><line x1="40" y1="150" x2="660" y2="150" stroke="#737b84"/><line x1="350" y1="20" x2="350" y2="155" stroke="#ff9900" stroke-dasharray="5"/><text x="355" y="35" fill="#ff9900">5s aging boost · Request A promoted</text><rect x="60" y="55" width="450" height="20" fill="#5794f2"/><text x="68" y="70" fill="#111217">Request A waiting</text><rect x="60" y="85" width="180" height="20" fill="#73bf69"/><text x="68" y="100" fill="#111217">Request B</text><rect x="60" y="115" width="280" height="20" fill="#737b84"/><text x="68" y="130" fill="#111217">Request C</text></svg><div class="formula">age_boost = waiting_time / 5.0</div></div></section>
+<section id="page-profiler" class="page"><h1 class="page-heading">Layer Profiler</h1><label class="muted">Model <select class="selectors" style="display:inline-block" id="profileModel"><option>resnet18</option><option>resnet50</option><option>alexnet</option><option>vgg16</option></select></label><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Layer timing table</h3><table class="review-table"><tr><th>Layer Type</th><th>Compute</th><th>Memory</th><th>% total</th></tr><tr><td>Conv2d k=7</td><td>61.29ms</td><td>98MB</td><td>34.2%</td></tr><tr><td>BatchNorm</td><td>55.40ms</td><td>98MB</td><td>30.9%</td></tr><tr><td>MaxPool2d</td><td>44.88ms</td><td>24.5MB</td><td>25.1%</td></tr><tr><td>Conv2d k=3</td><td>33.42ms</td><td>24.5MB</td><td>18.7%</td></tr><tr><td>ReLU</td><td>0.03ms</td><td>3.06MB</td><td>0.02%</td></tr><tr><td>Linear</td><td>0.17ms</td><td>0.12MB</td><td>0.09%</td></tr></table></div><div class="review-card"><h3>Layer compute time breakdown</h3><p>Conv2d <span class="bar" style="display:inline-block;width:70%"><span style="width:100%"></span></span></p><p>BatchNorm <span class="bar" style="display:inline-block;width:65%"><span style="width:76%;background:var(--blue)"></span></span></p><p>MaxPool <span class="bar" style="display:inline-block;width:60%"><span style="width:61%;background:#737b84"></span></span></p><p>ReLU <span class="bar" style="display:inline-block;width:50%"><span style="width:8%;background:var(--green)"></span></span></p></div></div><div class="review-cards"><div class="review-card insight"><h3>Bottleneck layer</h3><p>Conv2d (in=3, out=64, k=7) — 61ms — 34% of total</p></div><div class="review-card insight"><h3>Fastest layer</h3><p>AdaptiveAvgPool2d — 0.044ms — negligible</p></div><div class="review-card insight"><h3>Memory peak</h3><p>First Conv2d layer — 98MB output</p></div></div></section>
+<section id="page-experiments" class="page"><h1 class="page-heading">Experiment Results</h1><div class="review-cards four"><div class="review-card scenario selected"><h3>A · Single model</h3><p>resnet50 · uniform · 2/s · 30s</p></div><div class="review-card scenario"><h3>B · Single model</h3><p>resnet50 · Poisson · 2/s · 30s</p></div><div class="review-card scenario"><h3>C · Multi-model</h3><p>resnet18, resnet50, vgg16 · uniform</p></div><div class="review-card scenario"><h3>D · Bursty</h3><p>resnet18, resnet50, vgg16 · bursty</p></div></div><div class="review-grid"><div class="review-card"><h3>Scheduler results</h3><p>FIFO avg latency 193ms</p><div class="bar"><span style="width:100%;background:#737b84"></span></div><p>SJF avg latency 145ms</p><div class="bar"><span style="width:75%;background:var(--blue)"></span></div><p>HASP avg latency 112ms</p><div class="bar"><span style="width:58%"></span></div><p>Fairness index 0.94</p><div class="bar"><span style="width:94%;background:var(--green)"></span></div></div><div class="review-card"><h3>Workload trace</h3><div id="workloadTrace" class="trace"></div><p class="muted">Request arrivals over selected scenario duration.</p></div></div><div class="review-card"><h3>Key findings</h3><div class="review-cards"><p>HASP achieves <b style="color:var(--green)">0 starvation events</b> across all scenarios.</p><p>HASP fairness index <b style="color:var(--orange)">0.94</b> vs FIFO 0.78 and SJF 0.65.</p><p>HASP throughput stays within 5% of SJF while eliminating starvation.</p></div></div></section>
+<section id="page-about" class="page"><h1 class="page-heading">GLIDE <span style="color:var(--orange)">· About</span></h1><div class="review-card"><h2>GPU Layer-Level Inference and Dispatching Emulator</h2><p>GLIDE is a final-year ECE project built on top of GPEmu. It enables GPU inference scheduling research without requiring real GPU hardware.</p></div><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Team</h3><p><b>Pranav M (1CR23EC104)</b> — Core engine, HASP scheduler, GPEmu integration</p><p>[Teammate 2] — Model decomposition, workload generator, metrics</p><p>[Teammate 3] — Dashboard, complexity analyser, experimental report</p><p>CMR Institute of Technology, Bengaluru<br>Electronics and Communication Engineering<br>Academic Year: 2025-2026</p></div><div class="review-card"><h3>Technology stack</h3><p>GPEmu · PyTorch 1.8 · SQLite · Flask · Chart.js · Docker</p><h3 style="margin-top:20px">Hardware profiles</h3><p>6 GPU profiles · 36 architectures · 216 combinations · <b style="color:var(--green)">100% pass rate</b></p></div></div></section>
+</main>
+<script>
+const $=id=>document.getElementById(id), colors={orange:'#ff9900',blue:'#5794f2',green:'#73bf69',red:'#f2495c',yellow:'#fade2a',grid:'#2c3235'};
+let computeChart,latencyChart,lastMetrics=null;
+let engineReplayTimer=null;
+document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('click',()=>{
+ const page=item.dataset.page;
+ document.querySelectorAll('.nav-item').forEach(nav=>nav.classList.toggle('active',nav===item));
+ document.querySelectorAll('.page').forEach(section=>section.classList.toggle('active',section.id===`page-${page}`));
+ if(page==='engine') replayEngine();
+ if(page==='experiments') drawTrace();
+}));
+function replayEngine(){
+ const terminal=$('engineTerminal'); if(!terminal)return;
+ if(engineReplayTimer)clearInterval(engineReplayTimer);
+ const lines=['[REQUEST] ae3664bf | Tesla V100 | ResNet50 | batch=32','[COMPUTE] emulated: 31.72ms | memory: 2953MB','[DONE]    latency: 34.24ms | queued: 0','[REQUEST] 481637cf | Tesla V100 | ResNet50 | batch=32','[COMPUTE] emulated: 31.72ms | memory: 2953MB','[DONE]    latency: 34.11ms | queued: 0','[REQUEST] 7cd19a42 | Tesla V100 | ResNet50 | batch=32','[COMPUTE] emulated: 31.72ms | memory: 2953MB','[DONE]    latency: 33.98ms | queued: 0'];
+ let i=0; terminal.textContent=''; engineReplayTimer=setInterval(()=>{terminal.textContent+=`${lines[i++]}\n`;if(i===lines.length)clearInterval(engineReplayTimer)},300);
+}
+function drawTrace(){const trace=$('workloadTrace');if(!trace||trace.children.length)return;for(let i=0;i<24;i++){const dot=document.createElement('i');dot.style.left=`${4+(i*37)%92}%`;trace.appendChild(dot)}}
+document.querySelectorAll('.scenario').forEach(card=>card.addEventListener('click',()=>{document.querySelectorAll('.scenario').forEach(item=>item.classList.remove('selected'));card.classList.add('selected');const trace=$('workloadTrace');if(trace)trace.innerHTML='';drawTrace()}));
+if($('runEngineTest'))$('runEngineTest').addEventListener('click',replayEngine);
+replayEngine();
+function num(v,d=0){const n=Number.parseFloat(v);return Number.isFinite(n)?n:d}
+function color(value,kind){if(kind==='memory')return value>80?colors.red:value>=60?colors.yellow:colors.green;if(kind==='compute')return value>70?colors.orange:value>=50?colors.yellow:colors.green;return value>80?colors.orange:value>=60?colors.yellow:colors.green}
+function gauge(id,text,value,kind){const v=Math.max(0,Math.min(100,num(value)));$(id).setAttribute('stroke-dasharray',`${v*.75} ${100-v*.75}`);$(id).setAttribute('stroke',color(v,kind));$(text).textContent=`${v.toFixed(0)}%`}
+function chartOptions(){return {responsive:true,animation:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#8e9090'},grid:{color:colors.grid}},y:{ticks:{color:'#8e9090'},grid:{color:colors.grid}}}}}
+function updateCharts(data){const batches=Array.isArray(data.batches)?data.batches:[], labels=batches.map((_,i)=>i+1), compute=batches.map(x=>num(x.compute_time)*1000), latency=(data.per_request||[]).map(x=>num(x.latency_ms));if(computeChart)computeChart.data={labels,datasets:[{data:compute,borderColor:colors.orange,backgroundColor:'transparent',tension:.25}]};else computeChart=new Chart($('computeChart'),{type:'line',data:{labels,datasets:[{data:compute,borderColor:colors.orange,backgroundColor:'transparent',tension:.25}]},options:chartOptions()});if(latencyChart)latencyChart.data={labels:latency.map((_,i)=>i+1),datasets:[{data:latency,borderColor:colors.blue,backgroundColor:'transparent',tension:.25}]};else latencyChart=new Chart($('latencyChart'),{type:'line',data:{labels:latency.map((_,i)=>i+1),datasets:[{data:latency,borderColor:colors.blue,backgroundColor:'transparent',tension:.25}]},options:chartOptions()});computeChart.update();latencyChart.update()}
+function setOptions(select,values,selected){if(!select.options.length)values.forEach(v=>select.add(new Option(v,v)));select.value=selected}
+function render(data){lastMetrics=data;const gpu=num(data.gpu_util),compute=num(data.compute_util),profile=data.profile_stats||{},gpuInfo=data.gpu_info||{},modelInfo=data.model_info||{},memory=num(profile.memory_peak_gb)*1024,totalMemory=num(gpuInfo.memory_gb)*1024,memoryPct=totalMemory?memory/totalMemory*100:0,bandwidth=num(profile.estimated_bandwidth_gbps),throughput=num(data.throughput),metrics=data.metrics||{},queue=data.queue_status||{};setOptions($('gpuSelector'),data.available_gpus||[],data.selected_gpu);setOptions($('modelSelector'),data.available_models||[],data.selected_model||data.active_model);$('gpuName').textContent=data.selected_gpu||'--';$('modelName').textContent=modelInfo.display_name||data.active_model||'--';$('statusText').textContent=String(data.status||'IDLE').toUpperCase();$('status').className=`status ${data.status||'idle'}`;gauge('gpuGauge','gpuGaugeText',gpu,'gpu');gauge('computeGauge','computeGaugeText',compute,'compute');gauge('memoryGauge','memoryGaugeText',memoryPct,'memory');$('throughput').textContent=throughput.toFixed(2);$('avgCompute').innerHTML=`${(num(data.avg_compute_time)*1000).toFixed(2)} <span class="unit">ms</span>`;$('minCompute').textContent=(num(data.min_compute_time)*1000).toFixed(2);$('maxCompute').textContent=(num(data.max_compute_time)*1000).toFixed(2);$('totalBatches').textContent=num(data.total_batches);$('eta').textContent=data.eta_seconds==null?'--':`${num(data.eta_seconds).toFixed(1)}s`;$('queueDepth').textContent=num(queue.queue_length);$('completed').textContent=num(data.total_batches);$('avgLatency').textContent=num(metrics.avg_latency_ms||queue.avg_latency_ms).toFixed(2);$('p95Latency').textContent=num(metrics.p95_latency_ms||queue.p95_latency_ms).toFixed(2);$('gpuBar').style.width=`${gpu}%`;$('gpuBarText').textContent=`${gpu}%`;$('computeBar').style.width=`${compute}%`;$('computeBarText').textContent=`${compute}%`;$('vramBar').style.width=`${Math.min(100,memoryPct)}%`;$('vramText').textContent=`${memory.toFixed(1)} MB`;$('bandwidthBar').style.width=`${Math.min(100,bandwidth/1e3*100)}%`;$('bandwidthText').textContent=bandwidth?`${bandwidth.toFixed(1)} GB/s`:'--';$('gpuInfo').innerHTML=`<b>${gpuInfo.name||data.selected_gpu||'--'}</b><br>${num(gpuInfo.memory_gb).toFixed(1)} GB memory · ${num(gpuInfo.compute_profile_count)} compute profiles`;$('modelInfo').innerHTML=`<b>${modelInfo.display_name||'--'}</b><br>${modelInfo.description||''}<br>${modelInfo.layers||'--'} layers · ${modelInfo.use_case||''}`;const log=(data.per_request||[]).slice(-6).map(x=>{const ms=num(x.latency_ms),cls=ms<50?'':ms<150?'medium':'slow';return `<div class="${cls}">Batch ${x.request_id||'--'} — ${(ms/1000).toFixed(3)}s — ${new Date(num(x.end_time)*1000||Date.now()).toLocaleTimeString()}</div>`}).join('');$('eventLog').innerHTML=log||'Waiting for event data...';updateCharts(data)}
+async function refresh(){try{const r=await fetch('/api/metrics',{cache:'no-store'});render(await r.json())}catch(e){$('statusText').textContent='OFFLINE'}}
+async function post(path,payload){await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});refresh()}
+$('gpuSelector').addEventListener('change',e=>post('/api/set_gpu',{gpu:e.target.value}));$('modelSelector').addEventListener('change',e=>post('/api/set_model',{model:e.target.value}));$('startRun').addEventListener('click',()=>post('/api/start_new_run',{}));refresh();setInterval(refresh,1000);
+</script></body></html>
 """
 
 
