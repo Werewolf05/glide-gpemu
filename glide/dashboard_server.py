@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 import statistics
+import sys
 import time
 from typing import Any, Dict, List, Optional
 
@@ -11,6 +12,9 @@ from flask import Flask, jsonify, render_template_string, request
 
 
 GLIDE_DIR = os.environ.get('GLIDE_DIR', os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = os.path.dirname(GLIDE_DIR)
+if PROJECT_ROOT not in sys.path:
+  sys.path.insert(0, PROJECT_ROOT)
 METRICS_PATH = os.path.join(GLIDE_DIR, 'glide_metrics.json')
 SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
 SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
@@ -2269,6 +2273,121 @@ if($('modelSelector'))$('modelSelector').addEventListener('change',e=>post('/api
 if($('startRun'))$('startRun').addEventListener('click',()=>post('/api/start_new_run',{}));
 if($('profileModel'))$('profileModel').addEventListener('change',e=>loadProfiler(e.target.value));
 loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();refresh();setInterval(refresh,1000);
+function addAuditStyles(){
+  const style=document.createElement('style');
+  style.textContent=`
+    .understand{margin:0 0 12px;padding:14px;background:#202328;border:1px solid var(--border);border-left:3px solid var(--orange)}
+    .understand h2{margin:0 0 6px;font-size:18px;color:#fff}.understand p{margin:0;color:var(--muted);line-height:1.5}
+    .concept-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;align-items:center;margin-top:12px}
+    .flow-step{position:relative;padding:13px 7px;text-align:center;background:#111217;border:1px solid var(--border);color:#fff}
+    .flow-step:not(:last-child)::after{content:'→';position:absolute;right:-15px;color:var(--orange);font-size:18px;z-index:2}
+    .request-dot{width:12px;height:12px;border-radius:50%;background:var(--orange);animation:flowMove 2s linear infinite;position:absolute;top:4px;left:3%;z-index:3}
+    @keyframes flowMove{0%{left:3%}25%{left:27%}50%{left:52%}75%{left:77%}100%{left:97%}}
+    .compute-clock{color:var(--orange);animation:clockFill var(--compute-duration,1s) linear infinite alternate}
+    @keyframes clockFill{from{opacity:.35}to{opacity:1}}
+    .scheduler-sim{display:grid;grid-template-columns:1fr 190px;gap:14px;margin-top:12px}
+    .request-board{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;align-items:end;min-height:160px}
+    .sim-request{padding:9px 4px;text-align:center;border:1px solid var(--blue);background:#172945;color:#fff;transition:transform .7s,background .7s,border-color .7s}
+    .sim-request.waiting{border-color:var(--red);background:#3b1820;animation:waitPulse 1s infinite alternate}
+    .sim-request.done{border-color:var(--green);background:#18311f;transform:translateY(-35px)}
+    .sim-request small,.score{display:block;color:var(--muted);font-size:10px}
+    @keyframes waitPulse{from{box-shadow:0 0 0 transparent}to{box-shadow:0 0 12px var(--red)}}
+    .gpu-box{display:grid;place-items:center;min-height:130px;border:2px solid var(--orange);background:#2b2416;color:#fff}
+    .sim-controls{display:flex;gap:8px;align-items:center;margin-top:10px}.sim-controls select{padding:7px;background:#202328;color:#fff;border:1px solid var(--border)}
+    .race{display:flex;align-items:end;gap:8px;height:150px;padding:12px;background:#111217;border:1px solid var(--border)}
+    .race-col{flex:1;text-align:center;color:#fff}.race-bar{height:8px;background:var(--orange);transition:height .35s}.race-col small{color:var(--muted)}
+    .layer-stack{display:grid;gap:5px;margin-top:12px}.layer-box{min-height:18px;padding:5px 9px;border-left:4px solid var(--orange);background:#202328;overflow:hidden;transition:height .3s}.layer-box span{font-weight:700}.layer-box small{display:block;color:var(--muted)}
+    .traffic-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.traffic-card{padding:10px;background:#111217;border:1px solid var(--border)}.traffic-dots{font-size:18px;letter-spacing:4px;color:var(--orange);min-height:26px}.traffic-dots.uniform{animation:dotPulse 1.2s infinite}.traffic-dots.poisson{animation:dotPulse 1.8s infinite}.traffic-dots.bursty{animation:dotPulse .8s infinite}@keyframes dotPulse{50%{opacity:.45}}
+    .legend-note{margin-top:8px;color:var(--muted);font-size:11px}
+    @media(max-width:700px){.concept-flow,.traffic-grid{grid-template-columns:1fr 1fr}.scheduler-sim{grid-template-columns:1fr}}
+  `;
+  document.head.appendChild(style);
+}
+function addUnderstanding(){
+  const engine=document.getElementById('page-engine');
+  if(engine&&!engine.querySelector('.engine-understand')){
+    engine.insertAdjacentHTML('afterbegin',`<div class="understand engine-understand"><h2>How the inference engine works</h2><p>This page shows how fast each GPU can process one batch of 32 images through a neural network — using real timing measurements from actual GPU hardware.</p><div class="concept-flow" style="--compute-duration:1s"><i class="request-dot"></i><div class="flow-step">Arrives</div><div class="flow-step">Waits in queue</div><div class="flow-step">GPU computes <span class="compute-clock">◷</span></div><div class="flow-step">Done</div></div><p class="legend-note">The moving dot is one request; the compute clock is scaled from the selected GPU's real resnet50 timing.</p></div>`);
+  }
+  const scheduler=document.getElementById('page-scheduler');
+  if(scheduler&&!scheduler.querySelector('.scheduler-understand')){
+    scheduler.insertAdjacentHTML('afterbegin',`<div class="understand scheduler-understand"><h2>How a scheduler chooses the next request</h2><p>When multiple requests arrive at once, someone has to decide which one gets processed first. This page compares three different decision strategies.</p><div class="sim-controls"><label>Example strategy <select id="simAlgorithm"><option>FIFO</option><option>SJF</option><option>HASP</option></select></label><button class="action" id="playScheduler">Play example</button><span id="simExplanation" class="muted"></span></div><div class="scheduler-sim"><div class="request-board" id="requestBoard"></div><div class="gpu-box">GPU<br><small>one request at a time</small></div></div><div class="legend-note">Illustration uses example request sizes; the measured table below uses 20 real ResNet50 requests on Tesla V100.</div></div>`);
+    scheduler.insertAdjacentHTML('beforeend',`<div class="review-card"><h3>Real completion race</h3><p class="muted">Each bar uses the real completion timestamps returned by the scheduler run; taller means more requests completed by the end of the run.</p><div id="schedulerRace" class="race"></div></div>`);
+    initSchedulerExample();
+  }
+  const profiler=document.getElementById('page-profiler');
+  if(profiler&&!profiler.querySelector('.profiler-understand')){
+    profiler.insertAdjacentHTML('afterbegin',`<div class="understand profiler-understand"><h2>What the profiler measures</h2><p>A neural network is built from many small building blocks called layers. This page measures how long each individual layer takes to run.</p><div id="layerStack" class="layer-stack"><div class="muted">Loading real layer sizes...</div></div><p class="legend-note">Each box height is proportional to that layer's real compute time. Hover a layer for a plain-English explanation.</p></div>`);
+  }
+  const experiments=document.getElementById('page-experiments');
+  if(experiments&&!experiments.querySelector('.experiments-understand')){
+    experiments.insertAdjacentHTML('afterbegin',`<div class="understand experiments-understand"><h2>Why test different traffic patterns?</h2><p>We tested all three schedulers under four realistic traffic patterns to see which handles real-world conditions best.</p><div class="traffic-grid"><div class="traffic-card"><b>Uniform</b><div class="traffic-dots uniform">•　•　•　•　•</div><small>Cars arriving evenly at a toll booth</small></div><div class="traffic-card"><b>Poisson</b><div class="traffic-dots poisson">••　　•　　　••　•</div><small>Random phone calls throughout the day</small></div><div class="traffic-card"><b>Multi-model</b><div class="traffic-dots uniform">•　•　•　•　•</div><small>Different model types sharing one GPU</small></div><div class="traffic-card"><b>Bursty</b><div class="traffic-dots bursty">••••　　　••••</div><small>Rush-hour traffic followed by quiet gaps</small></div></div><p class="legend-note">Dots above illustrate the concept; the results below use real request traces.</p></div>`);
+    experiments.insertAdjacentHTML('beforeend',`<div class="review-card"><h3>Real workload traces</h3><p class="muted">Each dot = one real inference request arriving at that moment in time.</p><div id="experimentTraces"></div></div>`);
+    experiments.insertAdjacentHTML('beforeend','<div id="experimentSummary" class="understand"><h2>Measured takeaway</h2><p>Loading the real experiment summary...</p></div>');
+  }
+  const engineTable=document.querySelector('#page-engine .review-table');
+  if(engineTable&&!engineTable.previousElementSibling?.classList.contains('legend-note'))engineTable.insertAdjacentHTML('beforebegin','<p class="legend-note">Real GPU comparison — resnet50, batch size 32. Compute and memory values come from profiled_data CSV files.</p>');
+  const schedulerTable=document.querySelector('#page-scheduler #schedulerRows');
+  if(schedulerTable&&!schedulerTable.closest('.review-card').querySelector('.real-caption'))schedulerTable.closest('.review-card').querySelector('h3').insertAdjacentHTML('afterend','<p class="legend-note real-caption">Real measured results — 20 requests, ResNet50 on Tesla V100, each scheduler run independently.</p>');
+  const profilerTable=document.querySelector('#page-profiler #profilerRows');
+  if(profilerTable&&!profilerTable.closest('.review-card').querySelector('.real-caption'))profilerTable.closest('.review-card').querySelector('h3').insertAdjacentHTML('afterend','<p class="legend-note real-caption">Real measured timing — selected model, isolated per-layer execution.</p>');
+}
+function initSchedulerExample(){
+  const board=$('requestBoard'), select=$('simAlgorithm'), button=$('playScheduler'), explanation=$('simExplanation');
+  if(!board||!select||!button)return;
+  const requests=[['A','Fast',20],['B','Slow',180],['C','Medium',60],['D','Fast',15],['E','Slow',200]];
+  const explanations={
+    FIFO:'Processes requests in the exact order they arrive. Simple but unfair — one slow request blocks everyone behind it.',
+    SJF:'Always picks the fastest remaining request first. Great for overall speed, but slow requests can wait forever: starvation.',
+    HASP:'Balances speed with fairness. The longer a request waits, the more its priority increases, so it eventually runs.'
+  };
+  function draw(){board.innerHTML=requests.map(([id,label,ms])=>`<div class="sim-request" data-id="${id}"><b>${id}</b><small>${label} · ${ms}ms</small><span class="score">waiting</span></div>`).join('');explanation.textContent=explanations[select.value]}
+  function play(){draw();const order=select.value==='FIFO'?['A','B','C','D','E']:select.value==='SJF'?['D','A','C','B','E']:['D','A','B','C','E'];let index=0;const timer=setInterval(()=>{if(index>=order.length){clearInterval(timer);return}const id=order[index++];document.querySelectorAll('.sim-request').forEach(el=>{if(el.dataset.id===id){el.classList.remove('waiting');el.classList.add('done');el.querySelector('.score').textContent=select.value==='HASP'?`${id}: score wins (aging boost)`:'processed'}else if(select.value!=='FIFO'&&!el.classList.contains('done')){el.classList.add('waiting');const ms=requests.find(item=>item[0]===el.dataset.id)[2];el.querySelector('.score').textContent=select.value==='HASP'?`${el.dataset.id}: score ${(0.3+index*0.12).toFixed(2)} (+${index*4}%)`:`wait timer ${index*0.8}s`}})},800)}
+  select.addEventListener('change',draw);button.addEventListener('click',play);draw();
+}
+function renderLayerStack(rows){
+  const stack=$('layerStack');if(!stack)return;
+  const explanations={Conv2d:'scans the image for patterns',BatchNorm:'keeps values on a stable scale',ReLU:'adds decision-making non-linearity',MaxPool2d:'keeps the strongest nearby signal',Linear:'turns features into a prediction',AdaptiveAvgPool2d:'summarizes the feature map'};
+  const visible=rows.slice(0,6), max=Math.max(1,...visible.map(row=>num(row.compute_cost_ms)));
+  stack.innerHTML='<div class="layer-box" title="The image entering the network">Input image</div>'+visible.map(row=>{const height=Math.max(22,Math.round(num(row.compute_cost_ms)/max*74));const type=row.layer_type||'Layer';const key=Object.keys(explanations).find(name=>type.includes(name));return `<div class="layer-box" title="${key?explanations[key]:'one processing step in the network'}" style="height:${height}px"><span>${type}</span><small>${num(row.compute_cost_ms).toFixed(3)}ms · hover for explanation</small></div>`}).join('')+'<div class="layer-box" title="The model output">Output prediction</div>';
+}
+function renderRace(data){
+  const host=$('schedulerRace');if(!host)return;
+  const names=['fifo','sjf','hasp'], colors=['#5794f2','#73bf69','#ff9900'];
+  const all=names.flatMap(name=>(data[name]?.completion_times_s||[]));const max=Math.max(0.001,...all);
+  host.innerHTML=names.map((name,index)=>{const times=data[name]?.completion_times_s||[];return `<div class="race-col"><div class="race-bar" style="height:${Math.max(8,Math.min(125,times.length/max*125))}px;background:${colors[index]}"></div><b>${name.toUpperCase()}</b><small>${times.length} completions<br>${max?times.at(-1).toFixed(3):'--'}s total</small></div>`}).join('');
+}
+function renderExperimentSummary(data){
+  const values=Object.values(data), starvation=values.reduce((acc,item)=>{const sched=item.schedulers||{};return {fifo:acc.fifo+num(sched.fifo?.starvation_count),sjf:acc.sjf+num(sched.sjf?.starvation_count),hasp:acc.hasp+num(sched.hasp?.starvation_count)}},{fifo:0,sjf:0,hasp:0});
+  const target=$('experimentSummary');if(target)target.innerHTML=`<h2>Measured takeaway</h2><p>Across all four traffic patterns, HASP achieved <b style="color:var(--green)">${starvation.hasp}</b> starvation events while FIFO caused <b>${starvation.fifo}</b> and SJF caused <b>${starvation.sjf}</b>. These counts come directly from the real experiment results.</p>`;
+}
+function renderExperimentTraces(data){
+  const host=$('experimentTraces');if(!host)return;
+  host.innerHTML=Object.entries(data).map(([name,result])=>{
+    const trace=Array.isArray(result.trace)?result.trace:[], duration=Math.max(1,...trace.map(item=>num(item.arrival_time)));
+    const dots=trace.map(item=>`<i title="${item.model_name||'request'} at ${num(item.arrival_time).toFixed(2)}s" style="left:${Math.min(98,num(item.arrival_time)/duration*100)}%"></i>`).join('');
+    return `<div class="legend-note"><b>${name}</b><div class="trace">${dots}</div></div>`;
+  }).join('');
+}
+const originalLoadGpuComparison=loadGpuComparison;
+loadGpuComparison=async function(){await originalLoadGpuComparison();const rows=await (await fetch('/api/gpu_comparison')).json();const selected=$('gpuSelector')?.value;const match=rows.find(row=>row.gpu===selected)||rows[0];const flow=document.querySelector('.concept-flow');if(flow&&match)flow.style.setProperty('--compute-duration',`${Math.max(.4,Math.min(2,num(match.compute_ms)/50))}s`)};
+const originalLoadProfiler=loadProfiler;
+loadProfiler=async function(model){
+  await originalLoadProfiler(model);
+  const response=await fetch(`/api/profiler_results?model=${encodeURIComponent(model)}`);
+  const rows=await response.json();
+  renderLayerStack(rows);
+  if(!rows.length){
+    const loading=$('profilerLoading');
+    if(loading)loading.innerHTML='No stored result. <button class="action" id="runProfiler">Run real profiler</button>';
+    const button=$('runProfiler');
+    if(button)button.onclick=async()=>{button.disabled=true;button.textContent='Running...';const result=await (await fetch(`/api/layer_profiler_run?model=${encodeURIComponent(model)}`)).json();renderLayerStack(result);if(loading)loading.textContent=`${result.length} real layers measured`};
+  }
+};
+const originalLoadScheduler=loadScheduler;
+loadScheduler=async function(){const data=await (await fetch('/api/scheduler_comparison')).json();await originalLoadScheduler();renderRace(data)};
+const originalLoadExperiments=loadExperiments;
+loadExperiments=async function(){const data=await (await fetch('/api/experiment_results')).json();await originalLoadExperiments();renderExperimentTraces(data);renderExperimentSummary(data)};
+addAuditStyles();addUnderstanding();loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();
 </script></body></html>
 """
 
@@ -2668,7 +2787,7 @@ def _jains_index(values: List[float]) -> float:
   return (total * total / denominator) if denominator else 1.0
 
 
-def _run_scheduler_comparison() -> Dict[str, Dict[str, float]]:
+def _run_scheduler_comparison() -> Dict[str, Dict[str, Any]]:
   try:
     from .engine import InferenceEngine
   except ImportError:
@@ -2692,7 +2811,11 @@ def _run_scheduler_comparison() -> Dict[str, Dict[str, float]]:
         'throughput': len(latencies) / elapsed,
         'jains_fairness_index': _jains_index(latencies),
         'starvation_count': sum(1 for value in latencies if value > (statistics.mean(latencies) * 3)) if latencies else 0,
-        'requests': [request.to_dict() for request in engine.completed_requests[:5]],
+        'requests': [request.to_dict() for request in engine.completed_requests],
+        'completion_times_s': [
+          (float(request.end_time) - min(float(item.end_time) for item in engine.completed_requests if item.end_time is not None))
+          for request in engine.completed_requests if request.end_time is not None
+        ],
       }
   finally:
     InferenceEngine._skip_sleep = previous
