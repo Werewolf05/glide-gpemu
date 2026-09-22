@@ -263,9 +263,9 @@ Key properties:
 
 | Member | Contribution |
 |--------|-------------|
-| Pranav M (1CR23EC104) | Layer profiling database, inference engine, HASP scheduler, GPEmu integration |
-| Teammate 2 | Model decomposition, workload generator, batching strategies, metrics framework |
-| Teammate 3 | Model complexity analyser, live dashboard, experimental report |
+| M Pranav | Layer profiling database, inference engine, HASP scheduler, GPEmu integration |
+| M Jeethan | Model decomposition, workload generator, batching strategies, metrics framework |
+| Manoj N Khatri | Model complexity analyser, live dashboard, experimental report |
 
 **Institution:** CMR Institute of Technology, Bengaluru
 **Department:** Electronics and Communication Engineering
