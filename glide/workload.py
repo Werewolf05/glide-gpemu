@@ -15,6 +15,7 @@ class WorkloadGenerator:
         rate: float = 1.0,
         duration: float = 30.0,
         seed: int = 42,
+        batch_sizes: Sequence[int] = (1,),
     ) -> None:
         if not model_list:
             raise ValueError('model_list must contain at least one model')
@@ -27,6 +28,9 @@ class WorkloadGenerator:
         self.rate = rate
         self.duration = duration
         self.seed = seed
+        if not batch_sizes or any(size < 1 for size in batch_sizes):
+            raise ValueError('batch_sizes must contain positive integers')
+        self.batch_sizes = list(batch_sizes)
 
     def generate(self) -> List[Dict[str, Any]]:
         rng = random.Random(self.seed)
@@ -57,7 +61,7 @@ class WorkloadGenerator:
             trace.append({
                 'arrival_time': round(arrival_time, 6),
                 'model_name': self.model_list[index % len(self.model_list)],
-                'batch_size': 1,
+                'batch_size': self.batch_sizes[index % len(self.batch_sizes)],
                 'priority': 0,
             })
             index += 1

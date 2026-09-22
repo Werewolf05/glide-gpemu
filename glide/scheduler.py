@@ -34,6 +34,7 @@ class Scheduler(ABC):
     def __init__(self, gpu: str) -> None:
         self.gpu = gpu
         self._selected_count = 0
+        self._decision_trace: List[Dict[str, Any]] = []
 
     @abstractmethod
     def select_next(self, queue: List['InferenceRequest'], current_time: float) -> Optional['InferenceRequest']:
@@ -44,6 +45,9 @@ class Scheduler(ABC):
 
     def get_stats(self) -> Dict[str, Any]:
         return {'name': self.name, 'selected_count': self._selected_count}
+
+    def get_decision_trace(self) -> List[Dict[str, Any]]:
+        return list(self._decision_trace)
 
 
 class FIFOScheduler(Scheduler):
@@ -79,10 +83,17 @@ class SJFScheduler(Scheduler):
 class HASPScheduler(Scheduler):
     name = 'hasp'
 
-    def __init__(self, gpu: str, aging_threshold: float = 5.0, memory_threshold_mb: float = 2048.0) -> None:
+    def __init__(
+        self, gpu: str, aging_threshold: float = 5.0,
+        memory_threshold_mb: float = 2048.0, use_aging: bool = True,
+        use_memory_affinity: bool = True, use_compute_affinity: bool = True,
+    ) -> None:
         super().__init__(gpu)
         self.aging_threshold = aging_threshold
         self.memory_threshold_mb = memory_threshold_mb
+        self.use_aging = use_aging
+        self.use_memory_affinity = use_memory_affinity
+        self.use_compute_affinity = use_compute_affinity
         self._starvation_count = 0
         self._starved_request_ids = set()
         self._latencies_ms: List[float] = []
@@ -111,9 +122,12 @@ class HASPScheduler(Scheduler):
         compute_ms = self._lookup_compute_ms(request)
         memory_mb = self._lookup_memory_mb(request)
         memory_fit_score = 1.0 if memory_mb <= self.memory_threshold_mb else 0.5
+        if not self.use_memory_affinity:
+            memory_fit_score = 1.0
         wait_seconds = max(0.0, current_time - request.arrival_time)
-        age_boost = wait_seconds / self.aging_threshold
-        return (1.0 / compute_ms) * memory_fit_score * (1.0 + age_boost)
+        age_boost = wait_seconds / self.aging_threshold if self.use_aging else 0.0
+        compute_score = 1.0 / compute_ms if self.use_compute_affinity else 1.0
+        return compute_score * memory_fit_score * (1.0 + age_boost)
 
     def select_next(self, queue: List['InferenceRequest'], current_time: float) -> Optional['InferenceRequest']:
         if not queue:
@@ -126,7 +140,32 @@ class HASPScheduler(Scheduler):
                 self._starvation_count += 1
 
         self._selected_count += 1
-        return max(queue, key=lambda request: self._affinity_score(request, current_time))
+        chosen = max(queue, key=lambda request: self._affinity_score(request, current_time))
+        self._decision_trace.append(self.explain_decision(chosen, current_time))
+        return chosen
+
+    def explain_decision(self, request: 'InferenceRequest', current_time: float) -> Dict[str, Any]:
+        compute_ms = self._lookup_compute_ms(request)
+        memory_mb = self._lookup_memory_mb(request)
+        wait_seconds = max(0.0, current_time - request.arrival_time)
+        memory_fit_score = 1.0 if memory_mb <= self.memory_threshold_mb else 0.5
+        if not self.use_memory_affinity:
+            memory_fit_score = 1.0
+        age_boost = wait_seconds / self.aging_threshold if self.use_aging else 0.0
+        compute_affinity = 1.0 / compute_ms if self.use_compute_affinity else 1.0
+        score = compute_affinity * memory_fit_score * (1.0 + age_boost)
+        return {
+            'request_id': request.request_id,
+            'model': request.model_name,
+            'batch_size': request.batch_size,
+            'compute_ms': compute_ms,
+            'memory_mb': memory_mb,
+            'wait_seconds': wait_seconds,
+            'compute_affinity': compute_affinity,
+            'memory_fit_score': memory_fit_score,
+            'age_boost': age_boost,
+            'final_score': score,
+        }
 
     def record_completion(self, request: 'InferenceRequest') -> None:
         if request.latency_ms is not None:
@@ -150,8 +189,12 @@ class HASPScheduler(Scheduler):
             'selected_count': self._selected_count,
             'aging_threshold': self.aging_threshold,
             'memory_threshold_mb': self.memory_threshold_mb,
+            'use_aging': self.use_aging,
+            'use_memory_affinity': self.use_memory_affinity,
+            'use_compute_affinity': self.use_compute_affinity,
             'starvation_count': self.get_starvation_count(),
             'fairness_index': self.get_fairness_index(),
+            'decision_trace': self.get_decision_trace(),
         }
 
 

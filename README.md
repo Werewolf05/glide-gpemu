@@ -216,8 +216,46 @@ This reports per-layer timing such as `Conv2d ... 61.286ms 98.000MB` and `Linear
 python glide/test_engine_all.py  # 6 GPUs × 36 models × 4 batch sizes; expected 216/216 PASS
 python glide/test_scheduler.py   # FIFO versus SJF versus HASP
 python glide/experiment.py       # Full experiment runner
+python -m unittest glide.test_glide_features  # decomposition/report/database regression tests
 python glide/demo.py             # One-command end-to-end demo
 ```
+
+#### Model decomposition and reports
+
+Decompose any compatible PyTorch model using the layer database. Missing
+profiles are returned explicitly rather than silently estimated:
+
+```python
+import torchvision.models as models
+from glide.model_analyser import decompose_model
+
+report = decompose_model(models.resnet18(weights=None), "Tesla_M40", "resnet18")
+print(report["total_compute_ms"], report["missing_profile_count"])
+```
+
+Experiments export `results.json`, `report.json`, `report.csv`, and
+`report.html`. Use `run_batching_experiment()` from `glide.experiment` to
+compare static, dynamic, and continuous batching with FIFO, SJF, and HASP.
+The dashboard also exposes the same decomposition through
+`GET /api/model_decomposition`.
+
+For final evaluation, use `run_repeated_experiment(config, output_dir, trials=5)`
+to run independent seed-offset trials. Reports include mean, sample standard
+deviation, and approximate 95% confidence intervals. Use
+`run_hasp_ablation()` to compare full HASP with variants that disable aging,
+memory affinity, or compute affinity. Results should be interpreted as
+profile-driven emulation results, not exact production-GPU latency.
+
+### Research methodology and limitations
+
+GLIDE's strongest claim is comparative: under the same generated trace and
+profile database, it makes scheduler and batching policies reproducible and
+measurable. It does not claim cycle-accurate GPU simulation. Report the profile
+source, model/input shape, seed, trial count, and missing-profile count with
+each result. For hardware-accuracy validation, compare selected predictions
+against measurements from at least one real GPU and report absolute and
+relative error. Avoid claiming HASP is universally optimal; evaluate where its
+aging and affinity terms help, and include the ablation results.
 
 ### HASP Scheduler
 

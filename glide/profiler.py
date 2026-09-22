@@ -188,7 +188,11 @@ def profile_model(
     import torch
     import torchvision.models as models
 
-    model = getattr(models, model_name)(pretrained=False)
+    model_factory = getattr(models, model_name)
+    try:
+        model = model_factory(weights=None)
+    except TypeError:
+        model = model_factory(pretrained=False)
 
     model.eval()
     model = model.to(device)
@@ -358,6 +362,11 @@ def profile_and_save(
             config=result['config'],
             compute_cost_ms=result['compute_time_ms'],
             memory_cost_mb=result['memory_mb'],
+            input_shape=[batch_size, 3, 224, 224],
+            batch_size=batch_size,
+            precision='float32',
+            warmup_runs=3,
+            measured_runs=num_runs,
         )
 
     return results
