@@ -5,6 +5,7 @@ import os
 import sqlite3
 import statistics
 import sys
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -18,10 +19,15 @@ if PROJECT_ROOT not in sys.path:
 METRICS_PATH = os.path.join(GLIDE_DIR, 'glide_metrics.json')
 SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
 SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
+SELECTED_SCHEDULER_PATH = os.path.join(GLIDE_DIR, 'selected_scheduler.json')
 PROFILED_DATA_ROOT = os.path.join(os.path.dirname(GLIDE_DIR), 'profiled_data')
 FALLBACK_PROFILED_DATA_ROOT = os.path.join(os.path.dirname(GLIDE_DIR), 'profiled_data')
 DEFAULT_MODEL = 'resnet18'
 DEFAULT_GPU = 'Tesla_M40'
+DEFAULT_SCHEDULER = 'fifo'
+SCHEDULER_NAMES = ('fifo', 'sjf', 'hasp')
+_RUN_LOCK = threading.Lock()
+_RUN_THREAD: Optional[threading.Thread] = None
 
 
 def _ensure_write_dir() -> None:
@@ -29,7 +35,7 @@ def _ensure_write_dir() -> None:
 
   Updates module-level path constants to point at the fallback when necessary.
   """
-  global GLIDE_DIR, METRICS_PATH, SELECTED_MODEL_PATH, SELECTED_GPU_PATH, PROFILED_DATA_ROOT
+  global GLIDE_DIR, METRICS_PATH, SELECTED_MODEL_PATH, SELECTED_GPU_PATH, SELECTED_SCHEDULER_PATH, PROFILED_DATA_ROOT
   # Try to ensure the configured glide directory exists and is writable.
   try:
     os.makedirs(GLIDE_DIR, exist_ok=True)
@@ -41,6 +47,7 @@ def _ensure_write_dir() -> None:
     METRICS_PATH = os.path.join(GLIDE_DIR, 'glide_metrics.json')
     SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
     SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
+    SELECTED_SCHEDULER_PATH = os.path.join(GLIDE_DIR, 'selected_scheduler.json')
     PROFILED_DATA_ROOT = FALLBACK_PROFILED_DATA_ROOT
 
   # If any of the selected files exist but are not writable by this user,
@@ -53,6 +60,7 @@ def _ensure_write_dir() -> None:
       METRICS_PATH = os.path.join(GLIDE_DIR, 'glide_metrics.json')
       SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
       SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
+      SELECTED_SCHEDULER_PATH = os.path.join(GLIDE_DIR, 'selected_scheduler.json')
       PROFILED_DATA_ROOT = FALLBACK_PROFILED_DATA_ROOT
       break
 
@@ -2196,13 +2204,13 @@ canvas{max-height:220px}.resource{display:grid;gap:12px}.resource-row{display:gr
 </head>
 <body><aside class="sidebar"><div class="brand">GLIDE<small style="display:block;color:var(--muted);font-size:9px;letter-spacing:1px">GPU INFERENCE LAB</small></div><button class="nav-item active" data-page="overview"><span class="nav-icon">▦</span><span class="nav-label">Overview</span></button><button class="nav-item" data-page="engine"><span class="nav-icon">◈</span><span class="nav-label">Inference Engine</span></button><button class="nav-item" data-page="scheduler"><span class="nav-icon">⇄</span><span class="nav-label">Scheduler</span></button><button class="nav-item" data-page="profiler"><span class="nav-icon">▥</span><span class="nav-label">Profiler</span></button><button class="nav-item" data-page="experiments"><span class="nav-icon">⚗</span><span class="nav-label">Experiment Results</span></button><button class="nav-item" data-page="about"><span class="nav-icon">ⓘ</span><span class="nav-label">About</span></button><div class="sidebar-foot">● localhost:5000<br><span style="color:var(--green)">● refresh 1s</span></div></aside><main class="dashboard">
 <div id="page-overview" class="page active">
-<header class="statusbar"><div class="brand">GLIDE</div><div id="status" class="status"><i class="dot"></i><span id="statusText">IDLE</span></div><div class="status-meta">GPU <b id="gpuName">--</b></div><div class="status-meta">MODEL <b id="modelName">--</b></div><div class="status-meta">REFRESH <b>1s</b></div></header>
+<header class="statusbar"><div class="brand">GLIDE</div><div id="status" class="status"><i class="dot"></i><span id="statusText">IDLE</span></div><div class="status-meta">GPU <b id="gpuName">--</b></div><div class="status-meta">MODEL <b id="modelName">--</b></div><div class="status-meta">SCHEDULER <b id="schedulerName">FIFO</b></div><div class="status-meta">REFRESH <b>1s</b></div></header>
 
 <section class="grid g4">
- <article class="panel gauge-panel blue"><div class="panel-title">GPU utilization</div><svg class="gauge" viewBox="0 0 140 140"><circle class="track" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="75 25" transform="rotate(135 70 70)"/><circle id="gpuGauge" class="value" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="0 100"/><text id="gpuGaugeText" x="70" y="76" text-anchor="middle">--</text><text class="label" x="70" y="103" text-anchor="middle">percent</text></svg></article>
- <article class="panel gauge-panel green"><div class="panel-title">Compute utilization</div><svg class="gauge" viewBox="0 0 140 140"><circle class="track" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="75 25" transform="rotate(135 70 70)"/><circle id="computeGauge" class="value" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="0 100"/><text id="computeGaugeText" x="70" y="76" text-anchor="middle">--</text><text class="label" x="70" y="103" text-anchor="middle">percent</text></svg></article>
- <article class="panel gauge-panel orange"><div class="panel-title">Memory utilization</div><svg class="gauge" viewBox="0 0 140 140"><circle class="track" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="75 25" transform="rotate(135 70 70)"/><circle id="memoryGauge" class="value" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="0 100"/><text id="memoryGaugeText" x="70" y="76" text-anchor="middle">--</text><text class="label" x="70" y="103" text-anchor="middle">percent</text></svg></article>
- <article class="panel stat green"><div class="panel-title">Throughput</div><div id="throughput" class="metric">--</div><div class="muted" style="text-align:center">batches / second</div></article>
+ <article class="panel gauge-panel blue"><div class="panel-title">GPU utilization <span class="info-tip" title="From the GPU_MODEL_UTILIZATION lookup table: real profiled values for the selected GPU and model.">?</span></div><svg class="gauge" viewBox="0 0 140 140"><circle class="track" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="75 25" transform="rotate(135 70 70)"/><circle id="gpuGauge" class="value" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="0 100"/><text id="gpuGaugeText" x="70" y="76" text-anchor="middle">--</text><text class="label" x="70" y="103" text-anchor="middle">percent</text></svg></article>
+ <article class="panel gauge-panel green"><div class="panel-title">Compute utilization <span class="info-tip" title="The compute-bound portion of the same real GPU_MODEL_UTILIZATION lookup table.">?</span></div><svg class="gauge" viewBox="0 0 140 140"><circle class="track" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="75 25" transform="rotate(135 70 70)"/><circle id="computeGauge" class="value" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="0 100"/><text id="computeGaugeText" x="70" y="76" text-anchor="middle">--</text><text class="label" x="70" y="103" text-anchor="middle">percent</text></svg></article>
+ <article class="panel gauge-panel orange"><div class="panel-title">Memory utilization <span class="info-tip" title="Profiled VRAM used divided by the selected GPU's total memory capacity.">?</span></div><svg class="gauge" viewBox="0 0 140 140"><circle class="track" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="75 25" transform="rotate(135 70 70)"/><circle id="memoryGauge" class="value" cx="70" cy="70" r="54" pathLength="100" stroke-dasharray="0 100"/><text id="memoryGaugeText" x="70" y="76" text-anchor="middle">--</text><text class="label" x="70" y="103" text-anchor="middle">percent</text></svg></article>
+ <article class="panel stat green"><div class="panel-title">Throughput <span class="info-tip" title="Batches completed divided by elapsed time since this run started.">?</span></div><div id="throughput" class="metric">--</div><div class="muted" style="text-align:center">batches / second</div></article>
 </section>
 
 <section class="grid g2"><article class="panel orange"><div class="panel-title">Batch compute time</div><canvas id="computeChart"></canvas></article><article class="panel blue"><div class="panel-title">Latency over time</div><canvas id="latencyChart"></canvas></article></section>
@@ -2211,9 +2219,9 @@ canvas{max-height:220px}.resource{display:grid;gap:12px}.resource-row{display:gr
 
 <section class="grid g2"><article class="panel blue"><div class="panel-title">GPU resource usage</div><div class="resource"><div class="resource-row"><span>GPU utilization</span><div class="meter"><span id="gpuBar"></span></div><b id="gpuBarText">--</b></div><div class="resource-row"><span>Compute cores</span><div class="meter green"><span id="computeBar"></span></div><b id="computeBarText">--</b></div><div class="resource-row"><span>VRAM usage</span><div class="meter orange"><span id="vramBar"></span></div><b id="vramText">--</b></div><div class="resource-row"><span>Memory bandwidth</span><div class="meter"><span id="bandwidthBar"></span></div><b id="bandwidthText">--</b></div></div></article><article class="panel green"><div class="panel-title">Request queue</div><div class="queue-stats"><div><strong id="queueDepth">0</strong><small>Depth</small></div><div><strong id="completed">0</strong><small>Completed</small></div><div><strong id="avgLatency">--</strong><small>Avg ms</small></div><div><strong id="p95Latency">--</strong><small>P95 ms</small></div></div><div id="eventLog" class="event-log">Waiting for event data...</div></article></section>
 
-<section class="grid g2"><article class="panel blue"><div class="panel-title">GPU profile</div><div class="selectors"><label>Selected GPU<select id="gpuSelector"></select></label></div><p id="gpuInfo" class="info">Loading profile...</p></article><article class="panel orange"><div class="panel-title">Model profile</div><div class="selectors"><label>Selected model<select id="modelSelector"></select></label></div><p id="modelInfo" class="info">Loading model...</p></article></section>
+<section class="grid g2"><article class="panel blue"><div class="panel-title">GPU profile</div><div class="selectors"><label>Selected GPU<select id="gpuSelector"></select></label></div><p id="gpuInfo" class="info">Loading profile...</p></article><article class="panel orange"><div class="panel-title">Model profile</div><div class="selectors"><label>Selected model<select id="modelSelector"></select></label><label>Scheduler<select id="schedulerSelector"><option value="fifo">FIFO</option><option value="sjf">SJF</option><option value="hasp">HASP</option></select></label></div><p id="modelInfo" class="info">Loading model...</p></article></section>
 
-<section class="panel"><div class="selectors"><button id="startRun" class="action">Start new run</button><span class="notice">HASP scheduling coming in Review 2</span><details class="info"><summary>What is GPEmu?</summary>GPEmu emulates GPU inference timing and resource behavior on ordinary CPU hardware, allowing GLIDE scheduling experiments without a physical GPU.</details><span class="muted">Mode: Sequential batch execution</span></div></section>
+<section class="panel"><div class="selectors"><button id="startRun" class="action">Start new run</button><details class="info"><summary>What is GPEmu?</summary>GPEmu emulates GPU inference timing and resource behavior on ordinary CPU hardware, allowing GLIDE scheduling experiments without a physical GPU.</details><span class="muted">Mode: live engine run using the selected scheduler</span></div></section>
 </div>
 <section id="page-engine" class="page"><h1 class="page-heading">Inference Engine</h1><div class="review-cards four"><div class="review-card"><b style="font-size:25px">216</b><p>Total combinations tested</p></div><div class="review-card"><b style="font-size:25px;color:var(--green)">100%</b><p>Pass rate</p></div><div class="review-card"><b style="font-size:25px">NVIDIA A100</b><p>Best GPU · fastest compute</p></div><div class="review-card"><b style="font-size:25px;color:var(--red)">Tesla K80</b><p>Worst GPU · slowest</p></div></div><div class="review-card"><h3>GPU comparison</h3><table class="review-table"><tr><th>GPU</th><th>Avg Compute (ms)</th><th>Memory (MB)</th><th>Tier</th></tr><tr><td>NVIDIA A100-SXM4-40GB</td><td>18.4</td><td>1024</td><td><span class="badge green">DATA CENTER</span></td></tr><tr><td>Tesla V100-PCIE-32GB</td><td>31.72</td><td>2953</td><td><span class="badge green">DATA CENTER</span></td></tr><tr><td>Tesla P100-PCIE-16GB</td><td>42.8</td><td>3120</td><td><span class="badge blue">PROFESSIONAL</span></td></tr><tr><td>Quadro RTX 6000</td><td>46.2</td><td>3244</td><td><span class="badge blue">PROFESSIONAL</span></td></tr><tr><td>Tesla M40</td><td>76.5</td><td>3880</td><td><span class="badge yellow">LEGACY</span></td></tr><tr><td>Tesla K80</td><td>94.7</td><td>4096</td><td><span class="badge red">LEGACY</span></td></tr></table></div><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Model timing by family</h3><p>ResNet · 64ms</p><div class="bar"><span style="width:82%"></span></div><p>VGG · 80ms</p><div class="bar"><span style="width:100%;background:var(--blue)"></span></div><p>DenseNet · 56ms</p><div class="bar"><span style="width:70%;background:var(--green)"></span></div><p>Others · 12ms</p><div class="bar"><span style="width:22%;background:#737b84"></span></div></div><div class="review-card"><h3>Live engine test</h3><div id="engineTerminal" class="terminal"></div><button id="runEngineTest" class="action" style="margin-top:10px">Run new test</button></div></div></section>
 <section id="page-scheduler" class="page"><h1 class="page-heading">Scheduler Comparison</h1><div class="review-cards"><div class="review-card"><h3>FIFO — First In First Out</h3><p>Processes requests in arrival order.</p><p><b>Pros:</b> Simple, predictable<br><b>Cons:</b> Head-of-line blocking, no starvation prevention</p><span class="badge">BASELINE</span></div><div class="review-card" style="border-top-color:var(--blue)"><h3>SJF — Shortest Job First</h3><p>Processes shortest compute time first.</p><p><b>Pros:</b> Better throughput<br><b>Cons:</b> Long requests starve indefinitely</p><span class="badge blue">BASELINE</span></div><div class="review-card" style="border-top-color:var(--orange)"><h3>HASP — Heterogeneous Affinity Scheduling</h3><p>Scores requests by affinity + aging boost.</p><div class="formula">score = (1/compute_ms) × memory_fit × (1 + age/threshold)</div><p><b>Pros:</b> Starvation-free, fair, competitive throughput</p><span class="badge yellow">NOVEL CONTRIBUTION</span></div></div><div class="review-card"><h3>Comparison metrics</h3><table class="review-table"><tr><th>Metric</th><th>FIFO</th><th>SJF</th><th style="color:var(--orange)">HASP</th></tr><tr><td>Avg Latency</td><td>193ms</td><td>145ms</td><td style="color:var(--orange)">112ms</td></tr><tr><td>P95 Latency</td><td>420ms</td><td>310ms</td><td style="color:var(--orange)">185ms</td></tr><tr><td>Throughput</td><td>5.2/s</td><td>7.1/s</td><td style="color:var(--orange)">6.8/s</td></tr><tr><td>Fairness Index</td><td>0.78</td><td>0.65</td><td style="color:var(--orange)">0.94</td></tr><tr><td>Starvation</td><td>12</td><td>28</td><td style="color:var(--green)">0</td></tr></table></div><div class="review-card" style="margin-top:12px"><h3>HASP aging boost</h3><svg class="timeline" viewBox="0 0 700 180"><line x1="40" y1="150" x2="660" y2="150" stroke="#737b84"/><line x1="350" y1="20" x2="350" y2="155" stroke="#ff9900" stroke-dasharray="5"/><text x="355" y="35" fill="#ff9900">5s aging boost · Request A promoted</text><rect x="60" y="55" width="450" height="20" fill="#5794f2"/><text x="68" y="70" fill="#111217">Request A waiting</text><rect x="60" y="85" width="180" height="20" fill="#73bf69"/><text x="68" y="100" fill="#111217">Request B</text><rect x="60" y="115" width="280" height="20" fill="#737b84"/><text x="68" y="130" fill="#111217">Request C</text></svg><div class="formula">age_boost = waiting_time / 5.0</div></div></section>
@@ -2244,11 +2252,11 @@ document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('clic
 function replayEngine(){
  const terminal=$('engineTerminal'); if(!terminal)return;
  if(engineReplayTimer)clearInterval(engineReplayTimer);
- terminal.textContent='Computing results from real profiled data...';
- fetch('/api/scheduler_comparison').then(response=>response.json()).then(data=>{
-  const requests=(data.fifo&&data.fifo.requests)||[];let i=0;terminal.textContent='';
-  engineReplayTimer=setInterval(()=>{const item=requests[i++];if(!item){clearInterval(engineReplayTimer);return}terminal.textContent+=`[REQUEST] ${item.request_id} | Tesla V100 | ResNet50 | batch=${item.batch_size}\n[COMPUTE] emulated: ${num(item.emulated_compute_ms).toFixed(2)}ms | memory: ${num(item.memory_mb).toFixed(0)}MB\n[DONE]    latency: ${num(item.latency_ms).toFixed(2)}ms | queued: 0\n`},300);
- }).catch(()=>{terminal.textContent='Unable to load real scheduler results.'});
+ terminal.textContent='Computing results from the selected GPU/model...';
+ fetch('/api/engine_test').then(response=>response.json()).then(data=>{
+  const requests=data.requests||[];let i=0;terminal.textContent='';
+    engineReplayTimer=setInterval(()=>{const item=requests[i++];if(!item){clearInterval(engineReplayTimer);return}const gpu=data.gpu||$('gpuSelector')?.value||'selected GPU',model=data.model||$('modelSelector')?.value||'selected model';terminal.textContent+=`[REQUEST] ${item.request_id} | ${gpu} | ${model} | batch=${item.batch_size}\n[COMPUTE] emulated: ${num(item.emulated_compute_ms).toFixed(2)}ms | memory: ${num(item.memory_mb).toFixed(0)}MB\n[DONE]    latency: ${num(item.latency_ms).toFixed(2)}ms | queued: 0\n`},300);
+ }).catch(()=>{terminal.textContent='Unable to load the selected engine test.'});
 }
 function drawTrace(){}
 if($('runEngineTest'))$('runEngineTest').addEventListener('click',replayEngine);
@@ -2261,16 +2269,17 @@ function updateCharts(data){const batches=Array.isArray(data.batches)?data.batch
 function setOptions(select,values,selected){if(!select.options.length)values.forEach(v=>select.add(new Option(v,v)));select.value=selected}
 function tier(ms){return ms<50?['DATA CENTER','green']:ms<=100?['PROFESSIONAL','blue']:['LEGACY','red']}
 async function loadGpuComparison(){const rows=await (await fetch('/api/gpu_comparison')).json();$('engineCount').textContent=rows.length*36;$('engineBest').textContent=rows[0]?.gpu||'--';$('engineWorst').textContent=rows.at(-1)?.gpu||'--';$('gpuComparisonRows').innerHTML=rows.map(row=>{const t=tier(row.compute_ms);return `<tr><td>${row.gpu}</td><td>${num(row.compute_ms).toFixed(2)}</td><td>${num(row.memory_mb).toFixed(1)}</td><td><span class="badge ${t[1]}">${t[0]}</span></td></tr>`}).join('');loadModelTimings($('gpuSelector')?.value||'Tesla_V100-PCIE-32GB')}
-async function loadModelTimings(gpu){const rows=await (await fetch(`/api/model_timings?gpu=${encodeURIComponent(gpu)}`)).json();$('modelTimingBars').innerHTML=rows.slice(0,12).map(row=>`<p>${row.model} · ${num(row.compute_ms).toFixed(2)}ms</p><div class="bar"><span style="width:${Math.min(100,num(row.compute_ms)/Math.max(1,num(rows[0]?.compute_ms))*100)}%"></span></div>`).join('')}
+async function loadModelTimings(gpu){const rows=await (await fetch(`/api/model_timings?gpu=${encodeURIComponent(gpu)}`)).json();const max=Math.max(1,...rows.map(row=>num(row.compute_ms)));$('modelTimingBars').innerHTML=`<div class="model-timing-list">${rows.map(row=>`<p>${row.model} · ${num(row.compute_ms).toFixed(2)}ms</p><div class="bar"><span style="width:${Math.min(100,num(row.compute_ms)/max*100)}%"></span></div>`).join('')}</div>`}
 async function loadScheduler(){const data=await (await fetch('/api/scheduler_comparison')).json();$('schedulerLoading').style.display='none';const rows=[['Avg latency','avg_latency_ms','ms'],['P95 latency','p95_latency_ms','ms'],['Throughput','throughput','/s'],['Fairness index','jains_fairness_index',''],['Starvation','starvation_count','']];$('schedulerRows').innerHTML=rows.map(row=>`<tr><td>${row[0]}</td>${['fifo','sjf','hasp'].map(name=>`<td style="${name==='hasp'?'color:var(--orange)':''}">${num(data[name]?.[row[1]]).toFixed(row[1]==='jains_fairness_index'?3:2)}${row[2]}</td>`).join('')}</tr>`).join('')}
 async function loadProfiler(model){$('profilerLoading').textContent='Loading SQLite profiles...';let data=await (await fetch(`/api/profiler_results?model=${encodeURIComponent(model)}`)).json();if(!data.length){$('profilerLoading').textContent='No database result. Run profiler first.';return}$('profilerLoading').textContent=`${data.length} real layers loaded`;$('profilerRows').innerHTML=data.map(x=>`<tr><td>${x.layer_type}<br><small>${x.config}</small></td><td>${num(x.compute_cost_ms).toFixed(3)}</td><td>${num(x.memory_cost_mb).toFixed(2)}</td><td>${num(x.pct_of_total).toFixed(2)}%</td></tr>`).join('');$('bottleneck').textContent=`${data[0].layer_type} — ${num(data[0].compute_cost_ms).toFixed(3)}ms`;const fast=data.at(-1);$('fastest').textContent=`${fast.layer_type} — ${num(fast.compute_cost_ms).toFixed(3)}ms`;$('memoryPeak').textContent=`${Math.max(...data.map(x=>num(x.memory_cost_mb))).toFixed(2)}MB`}
-async function loadExperiments(){const data=await (await fetch('/api/experiment_results')).json();$('experimentLoading').style.display='none';$('experimentResults').innerHTML=Object.entries(data).map(([name,result])=>`<div class="review-card" style="margin-bottom:12px"><h3>${name}</h3><table class="review-table"><tr><th>Scheduler</th><th>Avg ms</th><th>P95 ms</th><th>Fairness</th><th>Starvation</th></tr>${Object.entries(result.schedulers||{}).map(([scheduler,m])=>`<tr><td>${scheduler}</td><td>${num(m.avg_latency_ms).toFixed(2)}</td><td>${num(m.p95_latency_ms).toFixed(2)}</td><td>${num(m.jains_fairness_index).toFixed(3)}</td><td>${m.starvation_count}</td></tr>`).join('')}</table></div>`).join('')}
-function render(data){lastMetrics=data;const gpu=num(data.gpu_util),compute=num(data.compute_util),profile=data.profile_stats||{},gpuInfo=data.gpu_info||{},modelInfo=data.model_info||{},memory=num(profile.memory_peak_gb)*1024,totalMemory=num(gpuInfo.memory_gb)*1024,memoryPct=totalMemory?memory/totalMemory*100:0,bandwidth=num(profile.estimated_bandwidth_gbps),throughput=num(data.throughput),metrics=data.metrics||{},queue=data.queue_status||{};setOptions($('gpuSelector'),data.available_gpus||[],data.selected_gpu);setOptions($('modelSelector'),data.available_models||[],data.selected_model||data.active_model);$('gpuName').textContent=data.selected_gpu||'--';$('modelName').textContent=modelInfo.display_name||data.active_model||'--';$('statusText').textContent=String(data.status||'IDLE').toUpperCase();$('status').className=`status ${data.status||'idle'}`;gauge('gpuGauge','gpuGaugeText',gpu,'gpu');gauge('computeGauge','computeGaugeText',compute,'compute');gauge('memoryGauge','memoryGaugeText',memoryPct,'memory');$('throughput').textContent=throughput.toFixed(2);$('avgCompute').innerHTML=`${(num(data.avg_compute_time)*1000).toFixed(2)} <span class="unit">ms</span>`;$('minCompute').textContent=(num(data.min_compute_time)*1000).toFixed(2);$('maxCompute').textContent=(num(data.max_compute_time)*1000).toFixed(2);$('totalBatches').textContent=num(data.total_batches);$('eta').textContent=data.eta_seconds==null?'--':`${num(data.eta_seconds).toFixed(1)}s`;$('queueDepth').textContent=num(queue.queue_length);$('completed').textContent=num(data.total_batches);$('avgLatency').textContent=num(metrics.avg_latency_ms||queue.avg_latency_ms).toFixed(2);$('p95Latency').textContent=num(metrics.p95_latency_ms||queue.p95_latency_ms).toFixed(2);$('gpuBar').style.width=`${gpu}%`;$('gpuBarText').textContent=`${gpu}%`;$('computeBar').style.width=`${compute}%`;$('computeBarText').textContent=`${compute}%`;$('vramBar').style.width=`${Math.min(100,memoryPct)}%`;$('vramText').textContent=`${memory.toFixed(1)} MB`;$('bandwidthBar').style.width=`${Math.min(100,bandwidth/1e3*100)}%`;$('bandwidthText').textContent=bandwidth?`${bandwidth.toFixed(1)} GB/s`:'--';$('gpuInfo').innerHTML=`<b>${gpuInfo.name||data.selected_gpu||'--'}</b><br>${num(gpuInfo.memory_gb).toFixed(1)} GB memory · ${num(gpuInfo.compute_profile_count)} compute profiles`;$('modelInfo').innerHTML=`<b>${modelInfo.display_name||'--'}</b><br>${modelInfo.description||''}<br>${modelInfo.layers||'--'} layers · ${modelInfo.use_case||''}`;const log=(data.per_request||[]).slice(-6).map(x=>{const ms=num(x.latency_ms),cls=ms<50?'':ms<150?'medium':'slow';return `<div class="${cls}">Batch ${x.request_id||'--'} — ${(ms/1000).toFixed(3)}s — ${new Date(num(x.end_time)*1000||Date.now()).toLocaleTimeString()}</div>`}).join('');$('eventLog').innerHTML=log||'Waiting for event data...';updateCharts(data)}
+async function loadExperiments(){const data=await (await fetch('/api/experiment_results')).json();$('experimentLoading').style.display='none';$('experimentResults').innerHTML=Object.entries(data).filter(([,result])=>result&&result.schedulers).map(([name,result])=>`<div class="review-card" style="margin-bottom:12px"><h3>${name}</h3><p class="legend-note">Computed live by running glide/engine.py against an identical generated request trace.</p><table class="review-table"><tr><th>Scheduler</th><th>Avg ms</th><th>P95 ms</th><th>Fairness</th><th>Starvation</th></tr>${Object.entries(result.schedulers||{}).map(([scheduler,m])=>`<tr><td>${scheduler}</td><td>${num(m.avg_latency_ms).toFixed(2)}</td><td>${num(m.p95_latency_ms).toFixed(2)}</td><td>${num(m.jains_fairness_index).toFixed(3)}</td><td>${m.starvation_count}</td></tr>`).join('')}</table></div>`).join('')}
+function render(data){lastMetrics=data;const gpu=num(data.gpu_util),compute=num(data.compute_util),profile=data.profile_stats||{},gpuInfo=data.gpu_info||{},modelInfo=data.model_info||{},memory=num(profile.memory_peak_gb)*1024,totalMemory=num(gpuInfo.memory_gb)*1024,memoryPct=totalMemory?memory/totalMemory*100:0,bandwidth=num(profile.estimated_bandwidth_gbps),throughput=num(data.throughput),metrics=data.metrics||{},queue=data.queue_status||{};setOptions($('gpuSelector'),data.available_gpus||[],data.selected_gpu);setOptions($('modelSelector'),data.available_models||[],data.selected_model||data.active_model);if($('schedulerSelector'))$('schedulerSelector').value=data.scheduler_name||'fifo';$('gpuName').textContent=data.selected_gpu||'--';$('modelName').textContent=modelInfo.display_name||data.active_model||'--';if($('schedulerName'))$('schedulerName').textContent=String(data.scheduler_name||'fifo').toUpperCase();$('statusText').textContent=String(data.status||'IDLE').toUpperCase();$('status').className=`status ${data.status||'idle'}`;gauge('gpuGauge','gpuGaugeText',gpu,'gpu');gauge('computeGauge','computeGaugeText',compute,'compute');gauge('memoryGauge','memoryGaugeText',memoryPct,'memory');$('throughput').textContent=throughput.toFixed(2);$('avgCompute').innerHTML=`${(num(data.avg_compute_time)*1000).toFixed(2)} <span class="unit">ms</span>`;$('minCompute').textContent=(num(data.min_compute_time)*1000).toFixed(2);$('maxCompute').textContent=(num(data.max_compute_time)*1000).toFixed(2);$('totalBatches').textContent=num(data.total_batches);$('eta').textContent=data.eta_seconds==null?'--':`${num(data.eta_seconds).toFixed(1)}s`;$('queueDepth').textContent=num(queue.queue_length);$('completed').textContent=num(data.total_batches);$('avgLatency').textContent=num(metrics.avg_latency_ms||queue.avg_latency_ms).toFixed(2);$('p95Latency').textContent=num(metrics.p95_latency_ms||queue.p95_latency_ms).toFixed(2);$('gpuBar').style.width=`${gpu}%`;$('gpuBarText').textContent=`${gpu}%`;$('computeBar').style.width=`${compute}%`;$('computeBarText').textContent=`${compute}%`;$('vramBar').style.width=`${Math.min(100,memoryPct)}%`;$('vramText').textContent=`${memory.toFixed(1)} MB`;$('bandwidthBar').style.width=`${Math.min(100,bandwidth/1e3*100)}%`;$('bandwidthText').textContent=bandwidth?`${bandwidth.toFixed(1)} GB/s`:'--';$('gpuInfo').innerHTML=`<b>${gpuInfo.name||data.selected_gpu||'--'}</b><br>${num(gpuInfo.memory_gb).toFixed(1)} GB memory · ${num(gpuInfo.compute_profile_count)} compute profiles`;$('modelInfo').innerHTML=`<b>${modelInfo.display_name||'--'}</b><br>${modelInfo.description||''}<br>${modelInfo.layers||'--'} layers · ${modelInfo.use_case||''}`;const log=(data.per_request||[]).slice(-6).map(x=>{const ms=num(x.latency_ms),cls=ms<50?'':ms<150?'medium':'slow';return `<div class="${cls}">Batch ${x.request_id||'--'} — ${(ms/1000).toFixed(3)}s — ${new Date(num(x.end_time)*1000||Date.now()).toLocaleTimeString()}</div>`}).join('');$('eventLog').innerHTML=log||'Waiting for event data...';updateCharts(data)}
 async function refresh(){try{const r=await fetch('/api/metrics',{cache:'no-store'});render(await r.json())}catch(e){$('statusText').textContent='OFFLINE'}}
 async function post(path,payload){await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});refresh()}
-if($('gpuSelector'))$('gpuSelector').addEventListener('change',e=>{post('/api/set_gpu',{gpu:e.target.value});loadModelTimings(e.target.value)});
-if($('modelSelector'))$('modelSelector').addEventListener('change',e=>post('/api/set_model',{model:e.target.value}));
-if($('startRun'))$('startRun').addEventListener('click',()=>post('/api/start_new_run',{}));
+if($('gpuSelector'))$('gpuSelector').addEventListener('change',async e=>{await post('/api/set_gpu',{gpu:e.target.value});loadModelTimings(e.target.value);replayEngine()});
+if($('modelSelector'))$('modelSelector').addEventListener('change',async e=>{await post('/api/set_model',{model:e.target.value});replayEngine()});
+if($('schedulerSelector'))$('schedulerSelector').addEventListener('change',async e=>{await post('/api/set_scheduler',{scheduler:e.target.value});refresh()});
+if($('startRun'))$('startRun').addEventListener('click',async()=>{await post('/api/start_new_run',{});refresh()});
 if($('profileModel'))$('profileModel').addEventListener('change',e=>loadProfiler(e.target.value));
 loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();refresh();setInterval(refresh,1000);
 function addAuditStyles(){
@@ -2298,7 +2307,7 @@ function addAuditStyles(){
     .race-col{flex:1;text-align:center;color:#fff}.race-bar{height:8px;background:var(--orange);transition:height .35s}.race-col small{color:var(--muted)}
     .layer-stack{display:grid;gap:5px;margin-top:12px}.layer-box{min-height:18px;padding:5px 9px;border-left:4px solid var(--orange);background:#202328;overflow:hidden;transition:height .3s}.layer-box span{font-weight:700}.layer-box small{display:block;color:var(--muted)}
     .traffic-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.traffic-card{padding:10px;background:#111217;border:1px solid var(--border)}.traffic-dots{font-size:18px;letter-spacing:4px;color:var(--orange);min-height:26px}.traffic-dots.uniform{animation:dotPulse 1.2s infinite}.traffic-dots.poisson{animation:dotPulse 1.8s infinite}.traffic-dots.bursty{animation:dotPulse .8s infinite}@keyframes dotPulse{50%{opacity:.45}}
-    .legend-note{margin-top:8px;color:var(--muted);font-size:11px}
+    .legend-note{margin-top:8px;color:var(--muted);font-size:11px}.model-timing-list{max-height:520px;overflow:auto;padding-right:6px}.info-tip{display:inline-grid;place-items:center;width:16px;height:16px;margin-left:4px;border:1px solid var(--muted);border-radius:50%;color:var(--muted);font-size:10px;cursor:help}
     @media(max-width:700px){.concept-flow,.traffic-grid{grid-template-columns:1fr 1fr}.scheduler-sim{grid-template-columns:1fr}}
   `;
   document.head.appendChild(style);
@@ -2310,13 +2319,13 @@ function addUnderstanding(){
   }
   const scheduler=document.getElementById('page-scheduler');
   if(scheduler&&!scheduler.querySelector('.scheduler-understand')){
-    scheduler.insertAdjacentHTML('afterbegin',`<div class="understand scheduler-understand"><h2>How a scheduler chooses the next request</h2><p>When multiple requests arrive at once, someone has to decide which one gets processed first. This page compares three different decision strategies.</p><div class="sim-controls"><label>Example strategy <select id="simAlgorithm"><option>FIFO</option><option>SJF</option><option>HASP</option></select></label><button class="action" id="playScheduler">Play example</button><span id="simExplanation" class="muted"></span></div><div class="scheduler-sim"><div class="request-board" id="requestBoard"></div><div class="gpu-box">GPU<br><small>one request at a time</small></div></div><div class="legend-note">Illustration uses example request sizes; the measured table below uses 20 real ResNet50 requests on Tesla V100.</div></div>`);
+    scheduler.insertAdjacentHTML('afterbegin',`<div class="understand scheduler-understand"><h2>How a scheduler chooses the next request</h2><p>When multiple requests arrive at once, someone has to decide which one gets processed first. This page compares three different decision strategies.</p><div class="sim-controls"><label>Example strategy <select id="simAlgorithm"><option>FIFO</option><option>SJF</option><option>HASP</option></select></label><button class="action" id="playScheduler">Play example</button><span id="simExplanation" class="muted"></span></div><div class="scheduler-sim"><div class="request-board" id="requestBoard"></div><div class="gpu-box">GPU<br><small>one request at a time</small></div></div><p class="legend-note">HASP score = (1 / compute_ms) × memory_fit_score × (1 + waiting_time / AGING_THRESHOLD). AGING_THRESHOLD=5.0 seconds is configurable; after five seconds waiting, the age factor doubles a request's priority.</p><div class="legend-note">Illustration uses example request sizes; the measured table below uses the same 20-request trace for all schedulers.</div></div>`);
     scheduler.insertAdjacentHTML('beforeend',`<div class="review-card"><h3>Real completion race</h3><p class="muted">Each bar uses the real completion timestamps returned by the scheduler run; taller means more requests completed by the end of the run.</p><div id="schedulerRace" class="race"></div></div>`);
     initSchedulerExample();
   }
   const profiler=document.getElementById('page-profiler');
   if(profiler&&!profiler.querySelector('.profiler-understand')){
-    profiler.insertAdjacentHTML('afterbegin',`<div class="understand profiler-understand"><h2>What the profiler measures</h2><p>A neural network is built from many small building blocks called layers. This page measures how long each individual layer takes to run.</p><div id="layerStack" class="layer-stack"><div class="muted">Loading real layer sizes...</div></div><p class="legend-note">Each box height is proportional to that layer's real compute time. Hover a layer for a plain-English explanation.</p></div>`);
+    profiler.insertAdjacentHTML('afterbegin',`<div class="understand profiler-understand"><h2>What the profiler measures</h2><p>A neural network is built from many small building blocks called layers. This page measures how long each individual layer takes to run. Timing is isolated: each captured layer input is warmed up three times and measured seven times separately, so fast ReLU layers are not mistaken for the cost of the surrounding network.</p><p id="layerStackMeta" class="legend-note">Loading layer count...</p><div id="layerStack" class="layer-stack"><div class="muted">Loading real layer sizes...</div></div><button class="action" id="showAllLayers" type="button">Show all layers</button><p class="legend-note">Each box height is proportional to that layer's real compute time. Hover a layer for a plain-English explanation.</p></div>`);
   }
   const experiments=document.getElementById('page-experiments');
   if(experiments&&!experiments.querySelector('.experiments-understand')){
@@ -2348,6 +2357,8 @@ function renderLayerStack(rows){
   const stack=$('layerStack');if(!stack)return;
   const explanations={Conv2d:'scans the image for patterns',BatchNorm:'keeps values on a stable scale',ReLU:'adds decision-making non-linearity',MaxPool2d:'keeps the strongest nearby signal',Linear:'turns features into a prediction',AdaptiveAvgPool2d:'summarizes the feature map'};
   const visible=rows.slice(0,6), max=Math.max(1,...visible.map(row=>num(row.compute_cost_ms)));
+  const meta=$('layerStackMeta');if(meta)meta.textContent=`Showing top ${visible.length} layers by compute time (of ${rows.length} total).`;
+  const allButton=$('showAllLayers');if(allButton){allButton.onclick=()=>{stack.innerHTML='<div class="layer-box" title="The image entering the network">Input image</div>'+rows.map(row=>`<div class="layer-box" title="One isolated processing step in the network"><span>${row.layer_type||'Layer'}</span><small>${num(row.compute_cost_ms).toFixed(3)}ms</small></div>`).join('')+'<div class="layer-box" title="The model output">Output prediction</div>';allButton.disabled=true;allButton.textContent='Showing all layers'}};
   stack.innerHTML='<div class="layer-box" title="The image entering the network">Input image</div>'+visible.map(row=>{const height=Math.max(22,Math.round(num(row.compute_cost_ms)/max*74));const type=row.layer_type||'Layer';const key=Object.keys(explanations).find(name=>type.includes(name));return `<div class="layer-box" title="${key?explanations[key]:'one processing step in the network'}" style="height:${height}px"><span>${type}</span><small>${num(row.compute_cost_ms).toFixed(3)}ms · hover for explanation</small></div>`}).join('')+'<div class="layer-box" title="The model output">Output prediction</div>';
 }
 function renderRace(data){
@@ -2357,12 +2368,12 @@ function renderRace(data){
   host.innerHTML=names.map((name,index)=>{const times=data[name]?.completion_times_s||[];return `<div class="race-col"><div class="race-bar" style="height:${Math.max(8,Math.min(125,times.length/max*125))}px;background:${colors[index]}"></div><b>${name.toUpperCase()}</b><small>${times.length} completions<br>${max?times.at(-1).toFixed(3):'--'}s total</small></div>`}).join('');
 }
 function renderExperimentSummary(data){
-  const values=Object.values(data), starvation=values.reduce((acc,item)=>{const sched=item.schedulers||{};return {fifo:acc.fifo+num(sched.fifo?.starvation_count),sjf:acc.sjf+num(sched.sjf?.starvation_count),hasp:acc.hasp+num(sched.hasp?.starvation_count)}},{fifo:0,sjf:0,hasp:0});
+  const values=Object.values(data).filter(item=>item&&item.schedulers), starvation=values.reduce((acc,item)=>{const sched=item.schedulers||{};return {fifo:acc.fifo+num(sched.fifo?.starvation_count),sjf:acc.sjf+num(sched.sjf?.starvation_count),hasp:acc.hasp+num(sched.hasp?.starvation_count)}},{fifo:0,sjf:0,hasp:0});
   const target=$('experimentSummary');if(target)target.innerHTML=`<h2>Measured takeaway</h2><p>Across all four traffic patterns, HASP achieved <b style="color:var(--green)">${starvation.hasp}</b> starvation events while FIFO caused <b>${starvation.fifo}</b> and SJF caused <b>${starvation.sjf}</b>. These counts come directly from the real experiment results.</p>`;
 }
 function renderExperimentTraces(data){
   const host=$('experimentTraces');if(!host)return;
-  host.innerHTML=Object.entries(data).map(([name,result])=>{
+  host.innerHTML=Object.entries(data).filter(([,result])=>result&&result.trace).map(([name,result])=>{
     const trace=Array.isArray(result.trace)?result.trace:[], duration=Math.max(1,...trace.map(item=>num(item.arrival_time)));
     const dots=trace.map(item=>`<i title="${item.model_name||'request'} at ${num(item.arrival_time).toFixed(2)}s" style="left:${Math.min(98,num(item.arrival_time)/duration*100)}%"></i>`).join('');
     return `<div class="legend-note"><b>${name}</b><div class="trace">${dots}</div></div>`;
@@ -2449,22 +2460,129 @@ def _save_selected_model(model_key: str) -> str:
   return model
 
 
+def _load_selected_scheduler() -> str:
+  if not os.path.exists(SELECTED_SCHEDULER_PATH):
+    return DEFAULT_SCHEDULER
+  try:
+    with open(SELECTED_SCHEDULER_PATH, 'r', encoding='utf-8') as scheduler_file:
+      data = json.load(scheduler_file)
+      value = data.get('scheduler') if isinstance(data, dict) else None
+      return value if value in SCHEDULER_NAMES else DEFAULT_SCHEDULER
+  except (OSError, json.JSONDecodeError):
+    return DEFAULT_SCHEDULER
+
+
+def _save_selected_scheduler(scheduler_name: Any) -> str:
+  scheduler = str(scheduler_name or DEFAULT_SCHEDULER).lower()
+  if scheduler not in SCHEDULER_NAMES:
+    scheduler = DEFAULT_SCHEDULER
+  _ensure_write_dir()
+  with open(SELECTED_SCHEDULER_PATH, 'a+', encoding='utf-8') as scheduler_file:
+    fcntl.flock(scheduler_file.fileno(), fcntl.LOCK_EX)
+    try:
+      scheduler_file.seek(0)
+      scheduler_file.truncate()
+      json.dump({'scheduler': scheduler, 'updated_at': time.time()}, scheduler_file)
+      scheduler_file.flush()
+      os.fsync(scheduler_file.fileno())
+    finally:
+      fcntl.flock(scheduler_file.fileno(), fcntl.LOCK_UN)
+  return scheduler
+
+
 def _clear_metrics_file() -> None:
+  _ensure_write_dir()
+  for path in (METRICS_PATH, os.path.splitext(METRICS_PATH)[0] + '.ndjson'):
+    with open(path, 'a+', encoding='utf-8') as metrics_file:
+      fcntl.flock(metrics_file.fileno(), fcntl.LOCK_EX)
+      try:
+        metrics_file.seek(0)
+        metrics_file.truncate()
+        metrics_file.flush()
+        os.fsync(metrics_file.fileno())
+      finally:
+        fcntl.flock(metrics_file.fileno(), fcntl.LOCK_UN)
+
+
+def _write_live_metrics(payload: Dict[str, Any]) -> None:
   _ensure_write_dir()
   with open(METRICS_PATH, 'a+', encoding='utf-8') as metrics_file:
     fcntl.flock(metrics_file.fileno(), fcntl.LOCK_EX)
     try:
       metrics_file.seek(0)
       metrics_file.truncate()
+      json.dump(payload, metrics_file)
       metrics_file.flush()
       os.fsync(metrics_file.fileno())
     finally:
       fcntl.flock(metrics_file.fileno(), fcntl.LOCK_UN)
 
 
+def _run_live_engine(selected_gpu: str, selected_model: str, scheduler_name: str) -> None:
+  try:
+    from .engine import InferenceEngine
+    from .metrics import compute_metrics
+  except ImportError:
+    from glide.engine import InferenceEngine
+    from glide.metrics import compute_metrics
+
+  engine = InferenceEngine(gpu=selected_gpu, model=selected_model, scheduler=scheduler_name)
+  engine._skip_sleep = False
+  expected = 20
+  start_time = time.time()
+  for _ in range(expected):
+    engine.submit_request(batch_size=32)
+
+  while engine.request_queue:
+    engine.process_next()
+    completed = engine.get_results()
+    batches = [
+      {
+        'batch': index + 1,
+        'compute_time': float(item.get('emulated_compute_ms') or 0.0) / 1000.0,
+        'timestamp': item.get('end_time'),
+        'memory_gb': float(item.get('memory_mb') or 0.0) / 1024.0,
+      }
+      for index, item in enumerate(completed)
+    ]
+    _write_live_metrics({
+      'status': 'running' if len(completed) < expected else 'completed',
+      'scheduler_name': scheduler_name,
+      'model': selected_model,
+      'gpu': selected_gpu,
+      'selected_model': selected_model,
+      'selected_gpu': selected_gpu,
+      'batch_size': 32,
+      'start_time': start_time,
+      'total_expected_batches': expected,
+      'batches': batches,
+      'per_request': completed,
+      'queue_history': engine.queue_history,
+      'queue_status': engine.get_queue_status(),
+      'metrics': compute_metrics(completed),
+      'timestamp': time.time(),
+    })
+
+
+def _start_live_engine_run(selected_gpu: str, selected_model: str, scheduler_name: str) -> bool:
+  global _RUN_THREAD
+  with _RUN_LOCK:
+    if _RUN_THREAD is not None and _RUN_THREAD.is_alive():
+      return False
+    _RUN_THREAD = threading.Thread(
+      target=_run_live_engine,
+      args=(selected_gpu, selected_model, scheduler_name),
+      name='glide-live-engine',
+      daemon=True,
+    )
+    _RUN_THREAD.start()
+    return True
+
+
 def _safe_metrics_payload() -> Dict[str, Any]:
   selected_model = _load_selected_model()
   selected_gpu = _load_selected_gpu()
+  selected_scheduler = _load_selected_scheduler()
   profile_stats = _get_profile_stats(selected_gpu, selected_model, 32)
   utilization = get_utilization(selected_gpu, selected_model)
   profiles = _scan_gpu_profiles()
@@ -2488,7 +2606,7 @@ def _safe_metrics_payload() -> Dict[str, Any]:
     'max_compute_time': None,
     'throughput': None,
     'eta_seconds': None,
-    'scheduler_name': 'fifo',
+    'scheduler_name': _load_selected_scheduler(),
     'queue_history': [],
     'per_request': [],
     'metrics': {},
@@ -2605,6 +2723,7 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
 
   enriched['selected_gpu'] = selected_gpu
   enriched['gpu_info'] = _gpu_info(selected_gpu)
+  enriched['scheduler_name'] = enriched.get('scheduler_name') or selected_scheduler
 
   batches: List[Dict[str, Any]] = enriched.get('batches', [])
   if not isinstance(batches, list):
@@ -2693,6 +2812,7 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   # Prefer recent per-batch memory/bandwidth telemetry when available
   recent_mem_vals = [float(b.get('memory_gb')) for b in batches if isinstance(b, dict) and b.get('memory_gb') is not None]
   recent_bw_vals = [float(b.get('bandwidth_gbps')) for b in batches if isinstance(b, dict) and b.get('bandwidth_gbps') is not None]
+  bandwidth = float(profile_stats.get('estimated_bandwidth_gbps') or 0)
   if recent_mem_vals:
     # use the latest reported memory value
     vram_used = recent_mem_vals[-1]
@@ -2793,6 +2913,13 @@ def _run_scheduler_comparison() -> Dict[str, Dict[str, Any]]:
   except ImportError:
     from glide.engine import InferenceEngine
   results = {}
+  request_specs = [
+    ('resnet18', 8), ('resnet50', 32), ('alexnet', 16), ('resnet50', 8),
+    ('resnet18', 32), ('alexnet', 8), ('resnet50', 16), ('resnet18', 16),
+    ('alexnet', 32), ('resnet50', 32), ('resnet18', 8), ('alexnet', 16),
+    ('resnet50', 8), ('resnet18', 32), ('alexnet', 8), ('resnet50', 16),
+    ('resnet18', 16), ('alexnet', 32), ('resnet50', 32), ('resnet18', 8),
+  ]
   previous = InferenceEngine._skip_sleep
   InferenceEngine._skip_sleep = True
   try:
@@ -2800,8 +2927,11 @@ def _run_scheduler_comparison() -> Dict[str, Dict[str, Any]]:
       started = time.perf_counter()
       engine = InferenceEngine(gpu='Tesla_V100-PCIE-32GB', model='resnet50', scheduler=scheduler_name)
       engine._skip_sleep = True
-      for _ in range(20):
-        engine.submit_request(batch_size=32)
+      for model, batch_size in request_specs:
+        engine.submit_request(model_name=model, batch_size=batch_size)
+      arrival_time = time.time()
+      for request in engine.request_queue:
+        request.arrival_time = arrival_time
       engine.run_queue()
       elapsed = max(time.perf_counter() - started, 1e-9)
       latencies = [float(request.latency_ms or 0.0) for request in engine.completed_requests]
@@ -2820,6 +2950,9 @@ def _run_scheduler_comparison() -> Dict[str, Dict[str, Any]]:
   finally:
     InferenceEngine._skip_sleep = previous
   return results
+
+
+EXPERIMENT_CACHE_VERSION = 2
 
 
 def _run_real_experiments() -> Dict[str, Any]:
@@ -2843,8 +2976,11 @@ def _run_real_experiments() -> Dict[str, Any]:
     for scheduler_name in ('fifo', 'sjf', 'hasp'):
       engine = InferenceEngine(gpu='Tesla_V100-PCIE-32GB', model=experiment_models[0], scheduler=scheduler_name)
       engine._skip_sleep = True
+      base_time = time.time()
       for item in trace:
-        engine.submit_request(model_name=item['model_name'], batch_size=item['batch_size'], priority=item['priority'])
+        request_id = engine.submit_request(model_name=item['model_name'], batch_size=item['batch_size'], priority=item['priority'])
+        request = next(request for request in engine.request_queue if request.request_id == request_id)
+        request.arrival_time = base_time - max(0.0, 15.0 - float(item['arrival_time']))
       started = time.perf_counter()
       engine.run_queue()
       elapsed = max(time.perf_counter() - started, 1e-9)
@@ -2873,11 +3009,16 @@ def api_gpu_comparison():
 def api_model_timings():
   gpu = _normalize_gpu(request.args.get('gpu', 'Tesla_V100-PCIE-32GB'))
   values = []
+  missing = []
   for model in MODEL_LIST:
     compute = _real_compute_ms(gpu, model)
     if compute is not None:
       family = 'resnet' if model.startswith('res') else 'vgg' if model.startswith('vgg') else 'densenet' if model.startswith('dense') else 'others'
       values.append({'model': model, 'compute_ms': compute, 'family': family})
+    else:
+      missing.append(model)
+  if missing:
+    print(f'[API model_timings] missing profiles for {gpu}: {", ".join(missing)}')
   return jsonify(sorted(values, key=lambda item: item['compute_ms'], reverse=True))
 
 
@@ -2898,18 +3039,47 @@ def api_scheduler_comparison():
   return jsonify(_run_scheduler_comparison())
 
 
+@app.route('/api/engine_test')
+def api_engine_test():
+  try:
+    from .engine import InferenceEngine
+  except ImportError:
+    from glide.engine import InferenceEngine
+  selected_gpu = _load_selected_gpu()
+  selected_model = _load_selected_model()
+  scheduler = _load_selected_scheduler()
+  previous = InferenceEngine._skip_sleep
+  InferenceEngine._skip_sleep = True
+  try:
+    engine = InferenceEngine(gpu=selected_gpu, model=selected_model, scheduler=scheduler)
+    engine._skip_sleep = True
+    for _ in range(10):
+      engine.submit_request(batch_size=32)
+    engine.run_queue()
+    return jsonify({
+      'gpu': selected_gpu,
+      'model': selected_model,
+      'scheduler_name': scheduler,
+      'requests': engine.get_results(),
+    })
+  finally:
+    InferenceEngine._skip_sleep = previous
+
+
 @app.route('/api/experiment_results')
 def api_experiment_results_real():
   cache_path = os.path.join(GLIDE_DIR, 'experiment_cache.json')
   if os.path.exists(cache_path):
     try:
       with open(cache_path, 'r', encoding='utf-8') as cache_file:
-        return jsonify(json.load(cache_file))
+        cached = json.load(cache_file)
+        if isinstance(cached, dict) and cached.get('_cache_version') == EXPERIMENT_CACHE_VERSION:
+          return jsonify(cached.get('results', {}))
     except (OSError, json.JSONDecodeError):
-      pass
+      cached = None
   results = _run_real_experiments()
   with open(cache_path, 'w', encoding='utf-8') as cache_file:
-    json.dump(results, cache_file, indent=2)
+    json.dump({'_cache_version': EXPERIMENT_CACHE_VERSION, 'results': results}, cache_file, indent=2)
   return jsonify(results)
 
 
@@ -2968,20 +3138,30 @@ def api_set_gpu():
   })
 
 
+@app.route('/api/set_scheduler', methods=['POST'])
+def api_set_scheduler():
+  payload = request.get_json(silent=True) or {}
+  scheduler = _save_selected_scheduler(payload.get('scheduler'))
+  return jsonify({'ok': True, 'scheduler_name': scheduler})
+
+
 @app.route('/api/start_new_run', methods=['POST'])
 def api_start_new_run():
   _clear_metrics_file()
   selected = _load_selected_model()
   selected_gpu = _load_selected_gpu()
+  scheduler = _load_selected_scheduler()
   utilization = get_utilization(selected_gpu, selected)
-  print(f"[API start_new_run] gpu={selected_gpu} model={selected} gpu_util={utilization['gpu_util']} compute_util={utilization['compute_util']}")
+  started = _start_live_engine_run(selected_gpu, selected, scheduler)
+  print(f"[API start_new_run] gpu={selected_gpu} model={selected} scheduler={scheduler} started={started}")
   return jsonify({
     'ok': True,
-    'status': 'waiting',
+    'status': 'running' if started else 'already_running',
     'selected_model': selected,
     'model_info': _model_info(selected),
     'selected_gpu': selected_gpu,
     'gpu_info': _gpu_info(selected_gpu),
+    'scheduler_name': scheduler,
     'gpu_util': utilization['gpu_util'],
     'compute_util': utilization['compute_util']
   })
@@ -2990,4 +3170,5 @@ def api_start_new_run():
 if __name__ == '__main__':
   _save_selected_model(_load_selected_model())
   _save_selected_gpu(_load_selected_gpu())
+  _save_selected_scheduler(_load_selected_scheduler())
   app.run(host='0.0.0.0', port=5000, debug=False)

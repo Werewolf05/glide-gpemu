@@ -211,12 +211,16 @@ class InferenceEngine:
     def submit_request(self, model_name: Optional[str] = None, batch_size: int = 32, priority: int = 0) -> str:
         model = model_name or self.model
         request_id = str(uuid.uuid4())[:8]
+        compute_time_ms = get_profiled_compute_time(self.gpu, model, batch_size)
+        memory_mb = get_profiled_memory(self.gpu, model, batch_size)
         request = InferenceRequest(
             request_id=request_id,
             model_name=model,
             batch_size=batch_size,
             arrival_time=time.time(),
             priority=priority,
+            emulated_compute_ms=compute_time_ms,
+            memory_mb=memory_mb,
         )
         self.request_queue.append(request)
         return request_id
@@ -235,14 +239,14 @@ class InferenceEngine:
         request.status = 'processing'
         request.start_time = time.time()
 
-        compute_time_ms = get_profiled_compute_time(self.gpu, request.model_name, request.batch_size)
+        compute_time_ms = request.emulated_compute_ms
         if compute_time_ms is None:
             compute_time_ms = request.batch_size * 2.0
         request.emulated_compute_ms = compute_time_ms
         if not self._skip_sleep:
             time.sleep(compute_time_ms / 1000.0)
 
-        memory_mb = get_profiled_memory(self.gpu, request.model_name, request.batch_size)
+        memory_mb = request.memory_mb
         if memory_mb is not None:
             self.current_memory_mb = memory_mb
             request.memory_mb = memory_mb
