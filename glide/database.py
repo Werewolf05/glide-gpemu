@@ -31,13 +31,25 @@ def init_db(db_path: str = LAYER_DB_PATH) -> None:
             config TEXT NOT NULL,
             compute_cost_ms REAL,
             memory_cost_mb REAL,
+            parallelism_degree INTEGER NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(gpu, model, layer_type, config)
         )
     ''')
+    columns = {row[1] for row in cursor.execute('PRAGMA table_info(layers)')}
+    if 'parallelism_degree' not in columns:
+        cursor.execute('ALTER TABLE layers ADD COLUMN parallelism_degree INTEGER NOT NULL DEFAULT 1')
 
     conn.commit()
     conn.close()
+
+
+def estimate_parallelism(layer_type: str, config: Dict[str, Any]) -> int:
+    if layer_type == 'Conv2d':
+        return min(32, int(config.get('out', 1)))
+    if layer_type == 'Linear':
+        return min(32, int(config.get('out', 1)) // 32 + 1)
+    return 1
 
 
 def record_layer_cost(
@@ -47,6 +59,7 @@ def record_layer_cost(
     config: Dict[str, Any],
     compute_cost_ms: float,
     memory_cost_mb: float,
+    parallelism_degree: Optional[int] = None,
     db_path: str = LAYER_DB_PATH,
 ) -> None:
     """Insert or update layer profile."""
@@ -55,6 +68,7 @@ def record_layer_cost(
         init_db(db_path)
 
     config_json = json.dumps(config, sort_keys=True)
+    parallelism = parallelism_degree or estimate_parallelism(layer_type, config)
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -67,14 +81,16 @@ def record_layer_cost(
             layer_type,
             config,
             compute_cost_ms,
-            memory_cost_mb
+            memory_cost_mb,
+            parallelism_degree
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
 
         ON CONFLICT(gpu, model, layer_type, config)
         DO UPDATE SET
             compute_cost_ms = excluded.compute_cost_ms,
             memory_cost_mb = excluded.memory_cost_mb,
+            parallelism_degree = excluded.parallelism_degree,
             created_at = CURRENT_TIMESTAMP
         ''',
         (
@@ -84,6 +100,7 @@ def record_layer_cost(
             config_json,
             compute_cost_ms,
             memory_cost_mb,
+            parallelism,
         ),
     )
 
@@ -109,7 +126,7 @@ def query_layer_cost(
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT compute_cost_ms, memory_cost_mb
+        SELECT compute_cost_ms, memory_cost_mb, parallelism_degree
         FROM layers
         WHERE gpu = ?
         AND model = ?
@@ -128,7 +145,8 @@ def query_layer_cost(
     if row:
         return {
             'compute_cost_ms': row[0],
-            'memory_cost_mb': row[1]
+            'memory_cost_mb': row[1],
+            'parallelism_degree': row[2],
         }
 
     return None
@@ -170,7 +188,8 @@ def get_slowest_layers(
             layer_type,
             config,
             compute_cost_ms,
-            memory_cost_mb
+            memory_cost_mb,
+            parallelism_degree
         FROM layers
         WHERE gpu = ?
         AND model = ?
@@ -193,6 +212,7 @@ def get_slowest_layers(
             'config': json.loads(row[1]),
             'compute_cost_ms': row[2],
             'memory_cost_mb': row[3],
+            'parallelism_degree': row[4],
         })
 
     return result

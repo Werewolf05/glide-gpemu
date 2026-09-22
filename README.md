@@ -180,12 +180,11 @@ python glide/dashboard_server.py
 # Open http://localhost:5000
 ```
 
-In another terminal, run GPEmu with GPU emulation:
-
-```bash
-cd /workspace/gpemu/examples/imagenet
-python main.py --dummy --epochs 1 -b 32 -j 1 --gpemu-enable
-```
+The dashboard controls the complete emulated inference run. Select a GPU,
+model, and scheduler, then use **Start new run** on the Overview page.
+Progress is written incrementally while the background workload runs; use
+**Stop run** to cancel it safely. No second terminal or manual `main.py`
+process is required for dashboard runs.
 
 #### Inference engine
 

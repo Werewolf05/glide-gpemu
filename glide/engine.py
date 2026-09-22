@@ -17,6 +17,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from .scheduler import Scheduler, create_scheduler
+from .batching import Batcher, create_batcher
 
 
 GLIDE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -173,11 +174,14 @@ class InferenceEngine:
 
     _skip_sleep = False  # Set to True for testing to avoid actual time delays
 
-    def __init__(self, gpu: Optional[str] = None, model: Optional[str] = None, scheduler: str = 'fifo'):
+    def __init__(self, gpu: Optional[str] = None, model: Optional[str] = None,
+                 scheduler: str = 'fifo', batcher: str = 'continuous',
+                 batch_size: int = 1, batch_timeout_s: float = 0.05):
         self.gpu = gpu or self._load_selected_gpu()
         self.model = model or self._load_selected_model()
         self.scheduler_name = scheduler.lower()
         self.scheduler: Scheduler = create_scheduler(self.scheduler_name, self.gpu)
+        self.batcher: Batcher = create_batcher(batcher, batch_size, batch_timeout_s)
         self.request_queue: List[InferenceRequest] = []
         self.completed_requests: List[InferenceRequest] = []
         self.current_memory_mb = 0.0
@@ -225,45 +229,56 @@ class InferenceEngine:
         self.request_queue.append(request)
         return request_id
 
-    def process_next(self) -> Optional[InferenceRequest]:
+    def process_batch(self, flush: bool = False) -> List[InferenceRequest]:
         if not self.request_queue:
-            return None
+            return []
 
         current_time = time.time()
         self.queue_history.append({'timestamp': current_time, 'queue_length': len(self.request_queue)})
-        request = self.scheduler.select_next(self.request_queue, current_time)
-        if request is None:
-            return None
-        self.request_queue.remove(request)
-
-        request.status = 'processing'
-        request.start_time = time.time()
-
-        compute_time_ms = request.emulated_compute_ms
-        if compute_time_ms is None:
-            compute_time_ms = request.batch_size * 2.0
-        request.emulated_compute_ms = compute_time_ms
+        selected = self.batcher.select_batch(self.request_queue, current_time, flush)
+        if not selected:
+            return []
+        ordered: List[InferenceRequest] = []
+        while selected:
+            chosen = self.scheduler.select_next(selected, current_time)
+            if chosen is None:
+                break
+            selected.remove(chosen)
+            self.request_queue.remove(chosen)
+            ordered.append(chosen)
+        if not ordered:
+            return []
+        start_time = time.time()
+        compute_times = [float(request.emulated_compute_ms or request.batch_size * 2.0)
+                         for request in ordered]
+        for request, compute_time_ms in zip(ordered, compute_times):
+            request.status = 'processing'
+            request.start_time = start_time
+            request.emulated_compute_ms = compute_time_ms
         if not self._skip_sleep:
-            time.sleep(compute_time_ms / 1000.0)
+            time.sleep(max(compute_times) / 1000.0)
+        end_time = time.time()
+        for request in ordered:
+            if request.memory_mb is not None:
+                self.current_memory_mb = request.memory_mb
+            request.end_time = end_time
+            request.status = 'completed'
+            request.latency_ms = (end_time - request.arrival_time) * 1000.0
+            self.scheduler.record_completion(request)
+            self.completed_requests.append(request)
+        self.queue_history.append({'timestamp': end_time, 'queue_length': len(self.request_queue)})
+        return ordered
 
-        memory_mb = request.memory_mb
-        if memory_mb is not None:
-            self.current_memory_mb = memory_mb
-            request.memory_mb = memory_mb
-
-        request.end_time = time.time()
-        request.status = 'completed'
-        request.latency_ms = (request.end_time - request.arrival_time) * 1000.0
-        self.scheduler.record_completion(request)
-        self.completed_requests.append(request)
-        self.queue_history.append({'timestamp': request.end_time, 'queue_length': len(self.request_queue)})
-        return request
+    def process_next(self) -> Optional[InferenceRequest]:
+        completed = self.process_batch(flush=True)
+        return completed[0] if completed else None
 
     def run_queue(self) -> List[InferenceRequest]:
         self.is_running = True
         try:
             while self.request_queue:
-                self.process_next()
+                if not self.process_batch(flush=True):
+                    break
         finally:
             self.is_running = False
         return self.completed_requests

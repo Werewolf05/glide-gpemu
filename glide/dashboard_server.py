@@ -28,6 +28,14 @@ DEFAULT_SCHEDULER = 'fifo'
 SCHEDULER_NAMES = ('fifo', 'sjf', 'hasp')
 _RUN_LOCK = threading.Lock()
 _RUN_THREAD: Optional[threading.Thread] = None
+_RUN_STOP = threading.Event()
+_EXPERIMENT_LOCK = threading.Lock()
+_EXPERIMENT_THREAD: Optional[threading.Thread] = None
+_EXPERIMENT_STATE: Dict[str, Any] = {
+  'status': 'idle',
+  'progress': '0/12 combinations done',
+  'results': {},
+}
 
 
 def _ensure_write_dir() -> None:
@@ -2217,11 +2225,11 @@ canvas{max-height:220px}.resource{display:grid;gap:12px}.resource-row{display:gr
 
 <section class="grid g4"><article class="panel stat orange"><div class="panel-title">Avg compute time</div><div id="avgCompute" class="metric">-- <span class="unit">ms</span></div></article><article class="panel stat"><div class="panel-title">Min / Max</div><div class="stat-split"><div><small>Min</small><span id="minCompute">--</span></div><div><small>Max</small><span id="maxCompute">--</span></div></div></article><article class="panel stat blue"><div class="panel-title">Total batches</div><div id="totalBatches" class="metric">--</div></article><article class="panel stat"><div class="panel-title">Est. time remaining</div><div id="eta" class="metric">--</div></article></section>
 
-<section class="grid g2"><article class="panel blue"><div class="panel-title">GPU resource usage</div><div class="resource"><div class="resource-row"><span>GPU utilization</span><div class="meter"><span id="gpuBar"></span></div><b id="gpuBarText">--</b></div><div class="resource-row"><span>Compute cores</span><div class="meter green"><span id="computeBar"></span></div><b id="computeBarText">--</b></div><div class="resource-row"><span>VRAM usage</span><div class="meter orange"><span id="vramBar"></span></div><b id="vramText">--</b></div><div class="resource-row"><span>Memory bandwidth</span><div class="meter"><span id="bandwidthBar"></span></div><b id="bandwidthText">--</b></div></div></article><article class="panel green"><div class="panel-title">Request queue</div><div class="queue-stats"><div><strong id="queueDepth">0</strong><small>Depth</small></div><div><strong id="completed">0</strong><small>Completed</small></div><div><strong id="avgLatency">--</strong><small>Avg ms</small></div><div><strong id="p95Latency">--</strong><small>P95 ms</small></div></div><div id="eventLog" class="event-log">Waiting for event data...</div></article></section>
+<section class="grid g2"><article class="panel blue"><div class="panel-title">GPU resource usage</div><div class="resource"><div class="resource-row"><span>Compute cores</span><div class="meter green"><span id="computeBar"></span></div><b id="computeBarText">--</b></div><div class="resource-row"><span>VRAM usage</span><div class="meter orange"><span id="vramBar"></span></div><b id="vramText">--</b></div><div class="resource-row"><span>Memory bandwidth</span><div class="meter"><span id="bandwidthBar"></span></div><b id="bandwidthText">--</b></div></div><details class="info" style="margin-top:14px"><summary>How these numbers are calculated</summary><p>GPU Utilization: profiled benchmark lookup for the selected GPU and model; it is not calculated live.</p><p>Compute Utilization: profiled compute-bound fraction for the same GPU/model combination.</p><p>Memory Utilization: peak memory for the selected model and batch divided by the GPU VRAM capacity, multiplied by 100.</p><p>Throughput: completed requests divided by elapsed seconds since the run started.</p><p>Avg/Min/Max Compute Time: live statistics over completed emulated compute times.</p></details></article><article class="panel green"><div class="panel-title">Request queue</div><div class="queue-stats"><div><strong id="queueDepth">0</strong><small>Depth</small></div><div><strong id="completed">0</strong><small>Completed</small></div><div><strong id="avgLatency">--</strong><small>Avg ms</small></div><div><strong id="p95Latency">--</strong><small>P95 ms</small></div></div><div id="eventLog" class="event-log">Waiting for event data...</div></article></section>
 
 <section class="grid g2"><article class="panel blue"><div class="panel-title">GPU profile</div><div class="selectors"><label>Selected GPU<select id="gpuSelector"></select></label></div><p id="gpuInfo" class="info">Loading profile...</p></article><article class="panel orange"><div class="panel-title">Model profile</div><div class="selectors"><label>Selected model<select id="modelSelector"></select></label><label>Scheduler<select id="schedulerSelector"><option value="fifo">FIFO</option><option value="sjf">SJF</option><option value="hasp">HASP</option></select></label></div><p id="modelInfo" class="info">Loading model...</p></article></section>
 
-<section class="panel"><div class="selectors"><button id="startRun" class="action">Start new run</button><details class="info"><summary>What is GPEmu?</summary>GPEmu emulates GPU inference timing and resource behavior on ordinary CPU hardware, allowing GLIDE scheduling experiments without a physical GPU.</details><span class="muted">Mode: live engine run using the selected scheduler</span></div></section>
+<section class="panel"><div class="selectors"><button id="startRun" class="action">Start new run</button><button id="stopRun" class="action" style="background:var(--red);color:#fff" disabled>Stop run</button><details class="info"><summary>What is GPEmu?</summary>GPEmu emulates GPU inference timing and resource behavior on ordinary CPU hardware, allowing GLIDE scheduling experiments without a physical GPU.</details><span class="muted">Mode: live engine run using the selected scheduler</span></div></section>
 </div>
 <section id="page-engine" class="page"><h1 class="page-heading">Inference Engine</h1><div class="review-cards four"><div class="review-card"><b style="font-size:25px">216</b><p>Total combinations tested</p></div><div class="review-card"><b style="font-size:25px;color:var(--green)">100%</b><p>Pass rate</p></div><div class="review-card"><b style="font-size:25px">NVIDIA A100</b><p>Best GPU · fastest compute</p></div><div class="review-card"><b style="font-size:25px;color:var(--red)">Tesla K80</b><p>Worst GPU · slowest</p></div></div><div class="review-card"><h3>GPU comparison</h3><table class="review-table"><tr><th>GPU</th><th>Avg Compute (ms)</th><th>Memory (MB)</th><th>Tier</th></tr><tr><td>NVIDIA A100-SXM4-40GB</td><td>18.4</td><td>1024</td><td><span class="badge green">DATA CENTER</span></td></tr><tr><td>Tesla V100-PCIE-32GB</td><td>31.72</td><td>2953</td><td><span class="badge green">DATA CENTER</span></td></tr><tr><td>Tesla P100-PCIE-16GB</td><td>42.8</td><td>3120</td><td><span class="badge blue">PROFESSIONAL</span></td></tr><tr><td>Quadro RTX 6000</td><td>46.2</td><td>3244</td><td><span class="badge blue">PROFESSIONAL</span></td></tr><tr><td>Tesla M40</td><td>76.5</td><td>3880</td><td><span class="badge yellow">LEGACY</span></td></tr><tr><td>Tesla K80</td><td>94.7</td><td>4096</td><td><span class="badge red">LEGACY</span></td></tr></table></div><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Model timing by family</h3><p>ResNet · 64ms</p><div class="bar"><span style="width:82%"></span></div><p>VGG · 80ms</p><div class="bar"><span style="width:100%;background:var(--blue)"></span></div><p>DenseNet · 56ms</p><div class="bar"><span style="width:70%;background:var(--green)"></span></div><p>Others · 12ms</p><div class="bar"><span style="width:22%;background:#737b84"></span></div></div><div class="review-card"><h3>Live engine test</h3><div id="engineTerminal" class="terminal"></div><button id="runEngineTest" class="action" style="margin-top:10px">Run new test</button></div></div></section>
 <section id="page-scheduler" class="page"><h1 class="page-heading">Scheduler Comparison</h1><div class="review-cards"><div class="review-card"><h3>FIFO — First In First Out</h3><p>Processes requests in arrival order.</p><p><b>Pros:</b> Simple, predictable<br><b>Cons:</b> Head-of-line blocking, no starvation prevention</p><span class="badge">BASELINE</span></div><div class="review-card" style="border-top-color:var(--blue)"><h3>SJF — Shortest Job First</h3><p>Processes shortest compute time first.</p><p><b>Pros:</b> Better throughput<br><b>Cons:</b> Long requests starve indefinitely</p><span class="badge blue">BASELINE</span></div><div class="review-card" style="border-top-color:var(--orange)"><h3>HASP — Heterogeneous Affinity Scheduling</h3><p>Scores requests by affinity + aging boost.</p><div class="formula">score = (1/compute_ms) × memory_fit × (1 + age/threshold)</div><p><b>Pros:</b> Starvation-free, fair, competitive throughput</p><span class="badge yellow">NOVEL CONTRIBUTION</span></div></div><div class="review-card"><h3>Comparison metrics</h3><table class="review-table"><tr><th>Metric</th><th>FIFO</th><th>SJF</th><th style="color:var(--orange)">HASP</th></tr><tr><td>Avg Latency</td><td>193ms</td><td>145ms</td><td style="color:var(--orange)">112ms</td></tr><tr><td>P95 Latency</td><td>420ms</td><td>310ms</td><td style="color:var(--orange)">185ms</td></tr><tr><td>Throughput</td><td>5.2/s</td><td>7.1/s</td><td style="color:var(--orange)">6.8/s</td></tr><tr><td>Fairness Index</td><td>0.78</td><td>0.65</td><td style="color:var(--orange)">0.94</td></tr><tr><td>Starvation</td><td>12</td><td>28</td><td style="color:var(--green)">0</td></tr></table></div><div class="review-card" style="margin-top:12px"><h3>HASP aging boost</h3><svg class="timeline" viewBox="0 0 700 180"><line x1="40" y1="150" x2="660" y2="150" stroke="#737b84"/><line x1="350" y1="20" x2="350" y2="155" stroke="#ff9900" stroke-dasharray="5"/><text x="355" y="35" fill="#ff9900">5s aging boost · Request A promoted</text><rect x="60" y="55" width="450" height="20" fill="#5794f2"/><text x="68" y="70" fill="#111217">Request A waiting</text><rect x="60" y="85" width="180" height="20" fill="#73bf69"/><text x="68" y="100" fill="#111217">Request B</text><rect x="60" y="115" width="280" height="20" fill="#737b84"/><text x="68" y="130" fill="#111217">Request C</text></svg><div class="formula">age_boost = waiting_time / 5.0</div></div></section>
@@ -2231,7 +2239,7 @@ canvas{max-height:220px}.resource{display:grid;gap:12px}.resource-row{display:gr
 <section id="page-engine" class="page"><h1 class="page-heading">Inference Engine</h1><div class="review-cards four"><div class="review-card"><b id="engineCount">--</b><p>Combinations available</p></div><div class="review-card"><b style="color:var(--green)">Profiled</b><p>Real profile source</p></div><div class="review-card"><b id="engineBest">--</b><p>Fastest GPU</p></div><div class="review-card"><b id="engineWorst">--</b><p>Slowest GPU</p></div></div><div class="review-card"><h3>GPU comparison</h3><table class="review-table"><thead><tr><th>GPU</th><th>Compute ms</th><th>Memory MB</th><th>Tier</th></tr></thead><tbody id="gpuComparisonRows"></tbody></table></div><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Model timings</h3><div id="modelTimingBars"></div></div><div class="review-card"><h3>Live engine test</h3><div id="engineTerminal" class="terminal">Run a real scheduler test to load requests.</div><button id="runEngineTest" class="action" style="margin-top:10px">Run new test</button></div></div></section>
 <section id="page-scheduler" class="page"><h1 class="page-heading">Scheduler</h1><div class="review-cards"><div class="review-card"><h3>FIFO</h3><p>Requests execute in arrival order.</p><span class="badge">BASELINE</span></div><div class="review-card"><h3>SJF</h3><p>Shortest profiled compute time first.</p><span class="badge blue">BASELINE</span></div><div class="review-card"><h3>HASP</h3><p>Affinity scheduling with aging boost.</p><div class="formula">age_boost = waiting_time / 5.0</div><span class="badge yellow">NOVEL CONTRIBUTION</span></div></div><div class="review-card"><h3>Real scheduler comparison</h3><div id="schedulerLoading" class="muted">Computing results from real profiled data...</div><table class="review-table"><thead><tr><th>Metric</th><th>FIFO</th><th>SJF</th><th>HASP</th></tr></thead><tbody id="schedulerRows"></tbody></table></div></section>
 <section id="page-profiler" class="page"><h1 class="page-heading">Profiler</h1><label class="muted">Model <select id="profileModel"><option>resnet18</option><option>resnet50</option><option>alexnet</option><option>vgg16</option></select></label><div class="review-card" style="margin-top:12px"><h3>Real layer timing results</h3><div id="profilerLoading" class="muted">Loading SQLite profiles...</div><table class="review-table"><thead><tr><th>Layer</th><th>Compute ms</th><th>Memory MB</th><th>% total</th></tr></thead><tbody id="profilerRows"></tbody></table></div><div class="review-cards" style="margin-top:12px"><div class="review-card insight"><h3>Bottleneck</h3><p id="bottleneck">--</p></div><div class="review-card insight"><h3>Fastest</h3><p id="fastest">--</p></div><div class="review-card insight"><h3>Memory peak</h3><p id="memoryPeak">--</p></div></div></section>
-<section id="page-experiments" class="page"><h1 class="page-heading">Experiment Results</h1><div id="experimentLoading" class="muted">Computing results from real profiled data...</div><div id="experimentResults"></div></section>
+<section id="page-experiments" class="page"><h1 class="page-heading">Experiment Results</h1><div id="experimentLoading" class="muted">No experiment data yet.</div><button id="runExperiments" class="action" style="margin:10px 0">Run all experiments (~60 seconds)</button><div id="experimentProgress" class="muted"></div><div id="experimentResults"></div></section>
 <section id="page-about" class="page"><h1 class="page-heading">GLIDE <span style="color:var(--orange)">· About</span></h1><div class="review-card"><h2>GPU Layer-Level Inference and Dispatching Emulator</h2><p>GLIDE is a final-year ECE project built on top of GPEmu. It enables GPU inference scheduling research without requiring real GPU hardware.</p></div><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Team</h3><p><b>Pranav M (1CR23EC104)</b> — Core engine, HASP scheduler, GPEmu integration</p><p>Model decomposition, workload generator, metrics</p><p>Dashboard, complexity analyser, experimental report</p><p>CMR Institute of Technology, Bengaluru<br>Electronics and Communication Engineering<br>Academic Year: 2025-2026</p></div><div class="review-card"><h3>Technology stack</h3><p>GPEmu · PyTorch · SQLite · Flask · Chart.js · Docker</p><h3>Hardware profiles</h3><p>6 GPU profiles · 36 architectures · 216 combinations tested</p></div></div></section>
 </main>
 <script>
@@ -2272,16 +2280,18 @@ async function loadGpuComparison(){const rows=await (await fetch('/api/gpu_compa
 async function loadModelTimings(gpu){const rows=await (await fetch(`/api/model_timings?gpu=${encodeURIComponent(gpu)}`)).json();const max=Math.max(1,...rows.map(row=>num(row.compute_ms)));$('modelTimingBars').innerHTML=`<div class="model-timing-list">${rows.map(row=>`<p>${row.model} · ${num(row.compute_ms).toFixed(2)}ms</p><div class="bar"><span style="width:${Math.min(100,num(row.compute_ms)/max*100)}%"></span></div>`).join('')}</div>`}
 async function loadScheduler(){const data=await (await fetch('/api/scheduler_comparison')).json();$('schedulerLoading').style.display='none';const rows=[['Avg latency','avg_latency_ms','ms'],['P95 latency','p95_latency_ms','ms'],['Throughput','throughput','/s'],['Fairness index','jains_fairness_index',''],['Starvation','starvation_count','']];$('schedulerRows').innerHTML=rows.map(row=>`<tr><td>${row[0]}</td>${['fifo','sjf','hasp'].map(name=>`<td style="${name==='hasp'?'color:var(--orange)':''}">${num(data[name]?.[row[1]]).toFixed(row[1]==='jains_fairness_index'?3:2)}${row[2]}</td>`).join('')}</tr>`).join('')}
 async function loadProfiler(model){$('profilerLoading').textContent='Loading SQLite profiles...';let data=await (await fetch(`/api/profiler_results?model=${encodeURIComponent(model)}`)).json();if(!data.length){$('profilerLoading').textContent='No database result. Run profiler first.';return}$('profilerLoading').textContent=`${data.length} real layers loaded`;$('profilerRows').innerHTML=data.map(x=>`<tr><td>${x.layer_type}<br><small>${x.config}</small></td><td>${num(x.compute_cost_ms).toFixed(3)}</td><td>${num(x.memory_cost_mb).toFixed(2)}</td><td>${num(x.pct_of_total).toFixed(2)}%</td></tr>`).join('');$('bottleneck').textContent=`${data[0].layer_type} — ${num(data[0].compute_cost_ms).toFixed(3)}ms`;const fast=data.at(-1);$('fastest').textContent=`${fast.layer_type} — ${num(fast.compute_cost_ms).toFixed(3)}ms`;$('memoryPeak').textContent=`${Math.max(...data.map(x=>num(x.memory_cost_mb))).toFixed(2)}MB`}
-async function loadExperiments(){const data=await (await fetch('/api/experiment_results')).json();$('experimentLoading').style.display='none';$('experimentResults').innerHTML=Object.entries(data).filter(([,result])=>result&&result.schedulers).map(([name,result])=>`<div class="review-card" style="margin-bottom:12px"><h3>${name}</h3><p class="legend-note">Computed live by running glide/engine.py against an identical generated request trace.</p><table class="review-table"><tr><th>Scheduler</th><th>Avg ms</th><th>P95 ms</th><th>Fairness</th><th>Starvation</th></tr>${Object.entries(result.schedulers||{}).map(([scheduler,m])=>`<tr><td>${scheduler}</td><td>${num(m.avg_latency_ms).toFixed(2)}</td><td>${num(m.p95_latency_ms).toFixed(2)}</td><td>${num(m.jains_fairness_index).toFixed(3)}</td><td>${m.starvation_count}</td></tr>`).join('')}</table></div>`).join('')}
-function render(data){lastMetrics=data;const gpu=num(data.gpu_util),compute=num(data.compute_util),profile=data.profile_stats||{},gpuInfo=data.gpu_info||{},modelInfo=data.model_info||{},memory=num(profile.memory_peak_gb)*1024,totalMemory=num(gpuInfo.memory_gb)*1024,memoryPct=totalMemory?memory/totalMemory*100:0,bandwidth=num(profile.estimated_bandwidth_gbps),throughput=num(data.throughput),metrics=data.metrics||{},queue=data.queue_status||{};setOptions($('gpuSelector'),data.available_gpus||[],data.selected_gpu);setOptions($('modelSelector'),data.available_models||[],data.selected_model||data.active_model);if($('schedulerSelector'))$('schedulerSelector').value=data.scheduler_name||'fifo';$('gpuName').textContent=data.selected_gpu||'--';$('modelName').textContent=modelInfo.display_name||data.active_model||'--';if($('schedulerName'))$('schedulerName').textContent=String(data.scheduler_name||'fifo').toUpperCase();$('statusText').textContent=String(data.status||'IDLE').toUpperCase();$('status').className=`status ${data.status||'idle'}`;gauge('gpuGauge','gpuGaugeText',gpu,'gpu');gauge('computeGauge','computeGaugeText',compute,'compute');gauge('memoryGauge','memoryGaugeText',memoryPct,'memory');$('throughput').textContent=throughput.toFixed(2);$('avgCompute').innerHTML=`${(num(data.avg_compute_time)*1000).toFixed(2)} <span class="unit">ms</span>`;$('minCompute').textContent=(num(data.min_compute_time)*1000).toFixed(2);$('maxCompute').textContent=(num(data.max_compute_time)*1000).toFixed(2);$('totalBatches').textContent=num(data.total_batches);$('eta').textContent=data.eta_seconds==null?'--':`${num(data.eta_seconds).toFixed(1)}s`;$('queueDepth').textContent=num(queue.queue_length);$('completed').textContent=num(data.total_batches);$('avgLatency').textContent=num(metrics.avg_latency_ms||queue.avg_latency_ms).toFixed(2);$('p95Latency').textContent=num(metrics.p95_latency_ms||queue.p95_latency_ms).toFixed(2);$('gpuBar').style.width=`${gpu}%`;$('gpuBarText').textContent=`${gpu}%`;$('computeBar').style.width=`${compute}%`;$('computeBarText').textContent=`${compute}%`;$('vramBar').style.width=`${Math.min(100,memoryPct)}%`;$('vramText').textContent=`${memory.toFixed(1)} MB`;$('bandwidthBar').style.width=`${Math.min(100,bandwidth/1e3*100)}%`;$('bandwidthText').textContent=bandwidth?`${bandwidth.toFixed(1)} GB/s`:'--';$('gpuInfo').innerHTML=`<b>${gpuInfo.name||data.selected_gpu||'--'}</b><br>${num(gpuInfo.memory_gb).toFixed(1)} GB memory · ${num(gpuInfo.compute_profile_count)} compute profiles`;$('modelInfo').innerHTML=`<b>${modelInfo.display_name||'--'}</b><br>${modelInfo.description||''}<br>${modelInfo.layers||'--'} layers · ${modelInfo.use_case||''}`;const log=(data.per_request||[]).slice(-6).map(x=>{const ms=num(x.latency_ms),cls=ms<50?'':ms<150?'medium':'slow';return `<div class="${cls}">Batch ${x.request_id||'--'} — ${(ms/1000).toFixed(3)}s — ${new Date(num(x.end_time)*1000||Date.now()).toLocaleTimeString()}</div>`}).join('');$('eventLog').innerHTML=log||'Waiting for event data...';updateCharts(data)}
+async function loadExperiments(){const payload=await (await fetch('/api/experiment_results',{cache:'no-store'})).json();const data=payload.results||{};const loading=$('experimentLoading'),progress=$('experimentProgress'),button=$('runExperiments');if(payload.status==='computing'){loading.textContent='Experiments are running in the background.';progress.textContent=`Running experiment ${payload.progress||''}${payload.current?` (${payload.current})`:''}`;button.disabled=true;return}if(payload.status==='failed'){loading.textContent=`Experiment failed: ${payload.progress||'unknown error'}`;button.disabled=false;return}if(payload.status==='idle'&&!Object.keys(data).length){loading.textContent='No experiment data yet.';progress.textContent='';button.disabled=false;$('experimentResults').innerHTML='';return}loading.textContent=payload.status==='complete'?'Real experiment results loaded.':'Preparing experiment results...';progress.textContent=payload.progress||'';button.disabled=false;$('experimentResults').innerHTML=Object.entries(data).filter(([,result])=>result&&result.schedulers).map(([name,result])=>`<div class="review-card" style="margin-bottom:12px"><h3>${name}</h3><p class="legend-note">Computed from a generated workload trace and real profiled engine timings.</p><table class="review-table"><tr><th>Scheduler</th><th>Avg ms</th><th>P95 ms</th><th>Fairness</th><th>Starvation</th></tr>${Object.entries(result.schedulers||{}).map(([scheduler,m])=>`<tr><td>${scheduler}</td><td>${num(m.avg_latency_ms).toFixed(2)}</td><td>${num(m.p95_latency_ms).toFixed(2)}</td><td>${num(m.jains_fairness_index).toFixed(3)}</td><td>${m.starvation_count}</td></tr>`).join('')}</table></div>`).join('')}
+function render(data){lastMetrics=data;const gpu=num(data.gpu_util),compute=num(data.compute_util),profile=data.profile_stats||{},gpuInfo=data.gpu_info||{},modelInfo=data.model_info||{},memory=num(profile.memory_peak_gb)*1024,totalMemory=num(gpuInfo.memory_gb)*1024,memoryPct=totalMemory?memory/totalMemory*100:0,bandwidth=num(profile.estimated_bandwidth_gbps),throughput=num(data.throughput),metrics=data.metrics||{},queue=data.queue_status||{};setOptions($('gpuSelector'),data.available_gpus||[],data.selected_gpu);setOptions($('modelSelector'),data.available_models||[],data.selected_model||data.active_model);if($('schedulerSelector'))$('schedulerSelector').value=data.scheduler_name||'fifo';$('gpuName').textContent=data.selected_gpu||'--';$('modelName').textContent=modelInfo.display_name||data.active_model||'--';if($('schedulerName'))$('schedulerName').textContent=String(data.scheduler_name||'fifo').toUpperCase();$('statusText').textContent=String(data.status||'IDLE').toUpperCase();$('status').className=`status ${data.status||'idle'}`;gauge('gpuGauge','gpuGaugeText',gpu,'gpu');gauge('computeGauge','computeGaugeText',compute,'compute');gauge('memoryGauge','memoryGaugeText',memoryPct,'memory');$('throughput').textContent=throughput.toFixed(2);$('avgCompute').innerHTML=`${(num(data.avg_compute_time)*1000).toFixed(2)} <span class="unit">ms</span>`;$('minCompute').textContent=(num(data.min_compute_time)*1000).toFixed(2);$('maxCompute').textContent=(num(data.max_compute_time)*1000).toFixed(2);$('totalBatches').textContent=num(data.total_batches);$('eta').textContent=data.eta_seconds==null?'--':`${num(data.eta_seconds).toFixed(1)}s`;$('queueDepth').textContent=num(queue.queue_length);$('completed').textContent=num(data.total_batches);$('avgLatency').textContent=num(metrics.avg_latency_ms||queue.avg_latency_ms).toFixed(2);$('p95Latency').textContent=num(metrics.p95_latency_ms||queue.p95_latency_ms).toFixed(2);$('computeBar').style.width=`${compute}%`;$('computeBarText').textContent=`${compute}%`;$('vramBar').style.width=`${Math.min(100,memoryPct)}%`;$('vramText').textContent=`${memory.toFixed(1)} MB`;$('bandwidthBar').style.width=`${Math.min(100,bandwidth/1e3*100)}%`;$('bandwidthText').textContent=bandwidth?`${bandwidth.toFixed(1)} GB/s`:'--';$('gpuInfo').innerHTML=`<b>${gpuInfo.name||data.selected_gpu||'--'}</b><br>${num(gpuInfo.memory_gb).toFixed(1)} GB memory · ${num(gpuInfo.compute_profile_count)} compute profiles`;$('modelInfo').innerHTML=`<b>${modelInfo.display_name||'--'}</b><br>${modelInfo.description||''}<br>${modelInfo.layers||'--'} layers · ${modelInfo.use_case||''}`;const log=(data.per_request||[]).slice(-6).map(x=>{const ms=num(x.latency_ms),cls=ms<50?'':ms<150?'medium':'slow';return `<div class="${cls}">Batch ${x.request_id||'--'} — ${(ms/1000).toFixed(3)}s — ${new Date(num(x.end_time)*1000||Date.now()).toLocaleTimeString()}</div>`}).join('');$('eventLog').innerHTML=log||'Waiting for event data...';$('startRun').disabled=data.status==='running';$('stopRun').disabled=data.status!=='running';updateCharts(data)}
 async function refresh(){try{const r=await fetch('/api/metrics',{cache:'no-store'});render(await r.json())}catch(e){$('statusText').textContent='OFFLINE'}}
 async function post(path,payload){await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});refresh()}
 if($('gpuSelector'))$('gpuSelector').addEventListener('change',async e=>{await post('/api/set_gpu',{gpu:e.target.value});loadModelTimings(e.target.value);replayEngine()});
 if($('modelSelector'))$('modelSelector').addEventListener('change',async e=>{await post('/api/set_model',{model:e.target.value});replayEngine()});
 if($('schedulerSelector'))$('schedulerSelector').addEventListener('change',async e=>{await post('/api/set_scheduler',{scheduler:e.target.value});refresh()});
-if($('startRun'))$('startRun').addEventListener('click',async()=>{await post('/api/start_new_run',{});refresh()});
+if($('startRun'))$('startRun').addEventListener('click',async()=>{await post('/api/start_run',{});refresh()});
+if($('stopRun'))$('stopRun').addEventListener('click',async()=>{await post('/api/stop_run',{});refresh()});
+if($('runExperiments'))$('runExperiments').addEventListener('click',async()=>{await post('/api/run_experiments',{});loadExperiments()});
 if($('profileModel'))$('profileModel').addEventListener('change',e=>loadProfiler(e.target.value));
-loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();refresh();setInterval(refresh,1000);
+loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();refresh();setInterval(refresh,1000);setInterval(loadExperiments,2000);
 function addAuditStyles(){
   const style=document.createElement('style');
   style.textContent=`
@@ -2526,17 +2536,76 @@ def _run_live_engine(selected_gpu: str, selected_model: str, scheduler_name: str
     from glide.engine import InferenceEngine
     from glide.metrics import compute_metrics
 
+  try:
+    from .workload import WorkloadGenerator
+  except ImportError:
+    from glide.workload import WorkloadGenerator
+
   engine = InferenceEngine(gpu=selected_gpu, model=selected_model, scheduler=scheduler_name)
   engine._skip_sleep = False
-  expected = 20
+  trace = WorkloadGenerator([selected_model], 'poisson', rate=3.0, duration=30.0, seed=int(time.time())).generate()
   start_time = time.time()
-  for _ in range(expected):
-    engine.submit_request(batch_size=32)
+  expected = len(trace)
+  _write_live_metrics({
+    'status': 'running',
+    'scheduler_name': scheduler_name,
+    'model': selected_model,
+    'gpu': selected_gpu,
+    'selected_model': selected_model,
+    'selected_gpu': selected_gpu,
+    'batch_size': 32,
+    'start_time': start_time,
+    'total_expected_batches': expected,
+    'batches': [],
+    'per_request': [],
+    'queue_history': [],
+    'queue_status': engine.get_queue_status(),
+    'metrics': {},
+    'timestamp': start_time,
+  })
 
-  while engine.request_queue:
-    engine.process_next()
-    completed = engine.get_results()
-    batches = [
+  trace_index = 0
+  try:
+    while trace_index < len(trace) or engine.request_queue:
+      if _RUN_STOP.is_set():
+        _update_live_status('stopped', engine, selected_gpu, selected_model, scheduler_name, start_time, expected, compute_metrics)
+        return
+
+      elapsed = time.time() - start_time
+      while trace_index < len(trace) and trace[trace_index]['arrival_time'] <= elapsed:
+        item = trace[trace_index]
+        engine.submit_request(model_name=item['model_name'], batch_size=32, priority=item.get('priority', 0))
+        trace_index += 1
+
+      if engine.request_queue:
+        request = engine.process_next()
+        if request is not None:
+          _append_live_result(request, engine, selected_gpu, selected_model, scheduler_name, start_time, expected, compute_metrics)
+        continue
+
+      next_arrival = trace[trace_index]['arrival_time'] if trace_index < len(trace) else elapsed
+      _RUN_STOP.wait(max(0.01, min(0.25, next_arrival - elapsed)))
+
+    _update_live_status('completed', engine, selected_gpu, selected_model, scheduler_name, start_time, expected, compute_metrics)
+  except Exception as exc:
+    print(f'[GLIDE live run] failed: {exc}')
+    _update_live_status('failed', engine, selected_gpu, selected_model, scheduler_name, start_time, expected, compute_metrics)
+
+
+def _live_payload(engine: Any, selected_gpu: str, selected_model: str, scheduler_name: str,
+                  start_time: float, expected: int, compute_metrics: Any) -> Dict[str, Any]:
+  completed = engine.get_results()
+  return {
+    'status': 'running',
+    'scheduler_name': scheduler_name,
+    'model': selected_model,
+    'gpu': selected_gpu,
+    'selected_model': selected_model,
+    'selected_gpu': selected_gpu,
+    'batch_size': 32,
+    'start_time': start_time,
+    'total_expected_batches': expected,
+    'batches': [
       {
         'batch': index + 1,
         'compute_time': float(item.get('emulated_compute_ms') or 0.0) / 1000.0,
@@ -2544,24 +2613,49 @@ def _run_live_engine(selected_gpu: str, selected_model: str, scheduler_name: str
         'memory_gb': float(item.get('memory_mb') or 0.0) / 1024.0,
       }
       for index, item in enumerate(completed)
-    ]
-    _write_live_metrics({
-      'status': 'running' if len(completed) < expected else 'completed',
-      'scheduler_name': scheduler_name,
-      'model': selected_model,
-      'gpu': selected_gpu,
-      'selected_model': selected_model,
-      'selected_gpu': selected_gpu,
-      'batch_size': 32,
-      'start_time': start_time,
-      'total_expected_batches': expected,
-      'batches': batches,
-      'per_request': completed,
-      'queue_history': engine.queue_history,
-      'queue_status': engine.get_queue_status(),
-      'metrics': compute_metrics(completed),
-      'timestamp': time.time(),
-    })
+    ],
+    'per_request': completed,
+    'queue_history': engine.queue_history,
+    'queue_status': engine.get_queue_status(),
+    'metrics': compute_metrics(completed),
+    'timestamp': time.time(),
+  }
+
+
+def _append_live_result(request: Any, engine: Any, selected_gpu: str, selected_model: str,
+                        scheduler_name: str, start_time: float, expected: int, compute_metrics: Any) -> None:
+  _ensure_write_dir()
+  with open(METRICS_PATH, 'a+', encoding='utf-8') as metrics_file:
+    fcntl.flock(metrics_file.fileno(), fcntl.LOCK_EX)
+    try:
+      metrics_file.seek(0)
+      raw = metrics_file.read().strip()
+      payload = json.loads(raw) if raw else {}
+      batches = payload.get('batches', [])
+      if not isinstance(batches, list):
+        batches = []
+      batches.append({
+        'batch': len(batches) + 1,
+        'compute_time': float(request.emulated_compute_ms or 0.0) / 1000.0,
+        'timestamp': request.end_time,
+        'memory_gb': float(request.memory_mb or 0.0) / 1024.0,
+      })
+      payload.update(_live_payload(engine, selected_gpu, selected_model, scheduler_name, start_time, expected, compute_metrics))
+      payload['batches'] = batches
+      metrics_file.seek(0)
+      metrics_file.truncate()
+      json.dump(payload, metrics_file)
+      metrics_file.flush()
+      os.fsync(metrics_file.fileno())
+    finally:
+      fcntl.flock(metrics_file.fileno(), fcntl.LOCK_UN)
+
+
+def _update_live_status(status: str, engine: Any, selected_gpu: str, selected_model: str,
+                        scheduler_name: str, start_time: float, expected: int, compute_metrics: Any) -> None:
+  payload = _live_payload(engine, selected_gpu, selected_model, scheduler_name, start_time, expected, compute_metrics)
+  payload['status'] = status
+  _write_live_metrics(payload)
 
 
 def _start_live_engine_run(selected_gpu: str, selected_model: str, scheduler_name: str) -> bool:
@@ -2569,6 +2663,7 @@ def _start_live_engine_run(selected_gpu: str, selected_model: str, scheduler_nam
   with _RUN_LOCK:
     if _RUN_THREAD is not None and _RUN_THREAD.is_alive():
       return False
+    _RUN_STOP.clear()
     _RUN_THREAD = threading.Thread(
       target=_run_live_engine,
       args=(selected_gpu, selected_model, scheduler_name),
@@ -2577,6 +2672,33 @@ def _start_live_engine_run(selected_gpu: str, selected_model: str, scheduler_nam
     )
     _RUN_THREAD.start()
     return True
+
+
+def _stop_live_engine_run() -> bool:
+  with _RUN_LOCK:
+    if _RUN_THREAD is None or not _RUN_THREAD.is_alive():
+      return False
+    _RUN_STOP.set()
+    return True
+
+
+def _mark_run_stopped() -> None:
+  _ensure_write_dir()
+  with open(METRICS_PATH, 'a+', encoding='utf-8') as metrics_file:
+    fcntl.flock(metrics_file.fileno(), fcntl.LOCK_EX)
+    try:
+      metrics_file.seek(0)
+      raw = metrics_file.read().strip()
+      payload = json.loads(raw) if raw else {}
+      payload['status'] = 'stopped'
+      payload['timestamp'] = time.time()
+      metrics_file.seek(0)
+      metrics_file.truncate()
+      json.dump(payload, metrics_file)
+      metrics_file.flush()
+      os.fsync(metrics_file.fileno())
+    finally:
+      fcntl.flock(metrics_file.fileno(), fcntl.LOCK_UN)
 
 
 def _safe_metrics_payload() -> Dict[str, Any]:
@@ -2723,7 +2845,7 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
 
   enriched['selected_gpu'] = selected_gpu
   enriched['gpu_info'] = _gpu_info(selected_gpu)
-  enriched['scheduler_name'] = enriched.get('scheduler_name') or selected_scheduler
+  enriched['scheduler_name'] = enriched.get('scheduler_name') or _load_selected_scheduler()
 
   batches: List[Dict[str, Any]] = enriched.get('batches', [])
   if not isinstance(batches, list):
@@ -2750,7 +2872,7 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   enriched['total_batches'] = total_batches
 
   if total_batches == 0:
-    if enriched.get('status') not in ('running', 'completed'):
+    if enriched.get('status') not in ('running', 'completed', 'stopped', 'failed'):
       enriched['status'] = 'waiting'
     # Use static lookup when no batches
     utilization = get_utilization(selected_gpu, selected_model)
@@ -2926,7 +3048,10 @@ def _run_scheduler_comparison() -> Dict[str, Dict[str, Any]]:
     for scheduler_name in ('fifo', 'sjf', 'hasp'):
       started = time.perf_counter()
       engine = InferenceEngine(gpu='Tesla_V100-PCIE-32GB', model='resnet50', scheduler=scheduler_name)
-      engine._skip_sleep = True
+      # Keep the profiled compute delay during experiments so scheduler order
+      # affects measured completion and tail latency, rather than collapsing
+      # every request to the same wall-clock instant.
+      engine._skip_sleep = False
       for model, batch_size in request_specs:
         engine.submit_request(model_name=model, batch_size=batch_size)
       arrival_time = time.time()
@@ -2952,10 +3077,10 @@ def _run_scheduler_comparison() -> Dict[str, Dict[str, Any]]:
   return results
 
 
-EXPERIMENT_CACHE_VERSION = 2
+EXPERIMENT_CACHE_VERSION = 3
 
 
-def _run_real_experiments() -> Dict[str, Any]:
+def _run_real_experiments(progress_callback: Any = None) -> Dict[str, Any]:
   try:
     from .engine import InferenceEngine
     from .workload import WorkloadGenerator
@@ -2970,12 +3095,17 @@ def _run_real_experiments() -> Dict[str, Any]:
     ('multi_bursty', models, 'bursty'),
   ]
   output = {}
+  combination = 0
   for name, experiment_models, mode in configs:
     trace = WorkloadGenerator(experiment_models, mode, 2.0, 15.0, seed=42).generate()
     output[name] = {'trace': trace, 'schedulers': {}}
     for scheduler_name in ('fifo', 'sjf', 'hasp'):
+      combination += 1
+      if progress_callback is not None:
+        progress_callback(combination, 12, name, scheduler_name)
       engine = InferenceEngine(gpu='Tesla_V100-PCIE-32GB', model=experiment_models[0], scheduler=scheduler_name)
-      engine._skip_sleep = True
+      # Preserve profiled service times so scheduler ordering changes latency.
+      engine._skip_sleep = False
       base_time = time.time()
       for item in trace:
         request_id = engine.submit_request(model_name=item['model_name'], batch_size=item['batch_size'], priority=item['priority'])
@@ -2992,6 +3122,41 @@ def _run_real_experiments() -> Dict[str, Any]:
         'starvation_count': sum(1 for value in latencies if value > average * 3) if latencies else 0,
       }
   return output
+
+
+def _run_experiments_background() -> None:
+  global _EXPERIMENT_STATE
+  cache_path = os.path.join(GLIDE_DIR, 'experiment_cache.json')
+
+  def update_progress(done: int, total: int, scenario: str, scheduler: str) -> None:
+    with _EXPERIMENT_LOCK:
+      _EXPERIMENT_STATE.update({
+        'status': 'computing',
+        'progress': f'{done}/{total} combinations done',
+        'current': f'{scenario} + {scheduler.upper()}',
+      })
+
+  try:
+    results = _run_real_experiments(update_progress)
+    with open(cache_path, 'w', encoding='utf-8') as cache_file:
+      json.dump({'_cache_version': EXPERIMENT_CACHE_VERSION, 'results': results}, cache_file, indent=2)
+    with _EXPERIMENT_LOCK:
+      _EXPERIMENT_STATE = {'status': 'complete', 'progress': '12/12 combinations done', 'results': results}
+  except Exception as exc:
+    print(f'[GLIDE experiments] failed: {exc}')
+    with _EXPERIMENT_LOCK:
+      _EXPERIMENT_STATE = {'status': 'failed', 'progress': str(exc), 'results': {}}
+
+
+def _start_experiments() -> bool:
+  global _EXPERIMENT_THREAD, _EXPERIMENT_STATE
+  with _EXPERIMENT_LOCK:
+    if _EXPERIMENT_THREAD is not None and _EXPERIMENT_THREAD.is_alive():
+      return False
+    _EXPERIMENT_STATE = {'status': 'computing', 'progress': '0/12 combinations done', 'results': {}}
+    _EXPERIMENT_THREAD = threading.Thread(target=_run_experiments_background, name='glide-experiments', daemon=True)
+    _EXPERIMENT_THREAD.start()
+    return True
 
 
 @app.route('/api/gpu_comparison')
@@ -3074,13 +3239,21 @@ def api_experiment_results_real():
       with open(cache_path, 'r', encoding='utf-8') as cache_file:
         cached = json.load(cache_file)
         if isinstance(cached, dict) and cached.get('_cache_version') == EXPERIMENT_CACHE_VERSION:
-          return jsonify(cached.get('results', {}))
+          results = cached.get('results', {})
+          return jsonify({'status': 'complete', 'progress': '12/12 combinations done', 'results': results})
     except (OSError, json.JSONDecodeError):
       cached = None
-  results = _run_real_experiments()
-  with open(cache_path, 'w', encoding='utf-8') as cache_file:
-    json.dump({'_cache_version': EXPERIMENT_CACHE_VERSION, 'results': results}, cache_file, indent=2)
-  return jsonify(results)
+  with _EXPERIMENT_LOCK:
+    state = dict(_EXPERIMENT_STATE)
+  if state.get('status') in ('computing', 'failed', 'complete'):
+    return jsonify(state)
+  return jsonify({'status': 'idle', 'progress': '0/12 combinations done', 'results': {}})
+
+
+@app.route('/api/run_experiments', methods=['POST'])
+def api_run_experiments():
+  started = _start_experiments()
+  return jsonify({'status': 'started' if started else 'already_running'})
 
 
 @app.route('/api/layer_profiler_run')
@@ -3165,6 +3338,27 @@ def api_start_new_run():
     'gpu_util': utilization['gpu_util'],
     'compute_util': utilization['compute_util']
   })
+
+
+@app.route('/api/start_run', methods=['POST'])
+def api_start_run():
+  selected_model = _load_selected_model()
+  selected_gpu = _load_selected_gpu()
+  scheduler = _load_selected_scheduler()
+  started = _start_live_engine_run(selected_gpu, selected_model, scheduler)
+  print(f"[API start_run] gpu={selected_gpu} model={selected_model} scheduler={scheduler} started={started}")
+  return jsonify({'status': 'started' if started else 'already_running'})
+
+
+@app.route('/api/stop_run', methods=['POST'])
+def api_stop_run():
+  stopped = _stop_live_engine_run()
+  current = _load_metrics_file()
+  if not stopped and current.get('status') != 'running':
+    return jsonify({'status': 'not_running'})
+  _mark_run_stopped()
+  print('[API stop_run] stop requested')
+  return jsonify({'status': 'stopped'})
 
 
 if __name__ == '__main__':

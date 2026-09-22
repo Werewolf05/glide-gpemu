@@ -110,6 +110,15 @@ def get_layer_config(module: Any) -> Dict[str, Any]:
             'num_features': module.num_features,
         }
 
+    if isinstance(module, nn.LayerNorm):
+        return {'normalized_shape': list(module.normalized_shape)}
+
+    if isinstance(module, nn.Dropout):
+        return {'p': module.p}
+
+    if isinstance(module, nn.MultiheadAttention):
+        return {'embed_dim': module.embed_dim, 'num_heads': module.num_heads}
+
     if isinstance(module, nn.ReLU):
         return {
             'inplace': module.inplace,
