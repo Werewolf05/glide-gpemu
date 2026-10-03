@@ -2277,7 +2277,8 @@ async function loadProfiler(model){$('profilerLoading').textContent='Loading SQL
 async function loadExperiments(){const payload=await (await fetch('/api/experiment_results',{cache:'no-store'})).json();const data=payload.results||{};const loading=$('experimentLoading'),progress=$('experimentProgress'),button=$('runExperiments');if(payload.status==='computing'){loading.textContent='Experiments are running in the background.';progress.textContent=`Running experiment ${payload.progress||''}${payload.current?` (${payload.current})`:''}`;button.disabled=true;return}if(payload.status==='failed'){loading.textContent=`Experiment failed: ${payload.progress||'unknown error'}`;button.disabled=false;return}if(payload.status==='idle'&&!Object.keys(data).length){loading.textContent='No experiment data yet.';progress.textContent='';button.disabled=false;$('experimentResults').innerHTML='';return}loading.textContent=payload.status==='complete'?'Real experiment results loaded.':'Preparing experiment results...';progress.textContent=payload.progress||'';button.disabled=false;$('experimentResults').innerHTML=Object.entries(data).filter(([,result])=>result&&result.schedulers).map(([name,result])=>`<div class="review-card" style="margin-bottom:12px"><h3>${name}</h3><p class="legend-note">Computed from a generated workload trace and real profiled engine timings.</p><table class="review-table"><tr><th>Scheduler</th><th>Avg ms</th><th>P95 ms</th><th>Fairness</th><th>Starvation</th></tr>${Object.entries(result.schedulers||{}).map(([scheduler,m])=>`<tr><td>${scheduler}</td><td>${num(m.avg_latency_ms).toFixed(2)}</td><td>${num(m.p95_latency_ms).toFixed(2)}</td><td>${num(m.jains_fairness_index).toFixed(3)}</td><td>${m.starvation_count}</td></tr>`).join('')}</table></div>`).join('')}
 function renderScenarioCharts(data){const canvas=$('scenarioChart');if(!canvas||typeof Chart==='undefined')return;const entries=Object.entries(data).filter(([,value])=>value&&value.schedulers);if(!entries.length)return;if(window.scenarioChart&&typeof window.scenarioChart.destroy==='function')window.scenarioChart.destroy();window.scenarioChart=new Chart(canvas,{type:'bar',data:{labels:entries.map(([name])=>name.replaceAll('_',' ')),datasets:['fifo','sjf','hasp'].map((name,index)=>({label:name.toUpperCase(),data:entries.map(([,value])=>num(value.schedulers?.[name]?.avg_latency_ms)),backgroundColor:[colors.gray,colors.blue,colors.orange][index]}))},options:{...chartOptions(),plugins:{legend:{display:true}}}})}
 function render(data){lastMetrics=data;const gpu=num(data.gpu_util),compute=num(data.compute_util),profile=data.profile_stats||{},gpuInfo=data.gpu_info||{},modelInfo=data.model_info||{},memory=num(profile.memory_peak_gb)*1024,totalMemory=num(gpuInfo.memory_gb)*1024,memoryPct=totalMemory?memory/totalMemory*100:0,bandwidth=num(profile.estimated_bandwidth_gbps),throughput=num(data.throughput),metrics=data.metrics||{},queue=data.queue_status||{};setOptions($('gpuSelector'),data.available_gpus||[],data.selected_gpu);setOptions($('modelSelector'),data.available_models||[],data.selected_model||data.active_model);if($('schedulerSelector'))$('schedulerSelector').value=data.scheduler_name||'fifo';$('gpuName').textContent=data.selected_gpu||'--';$('modelName').textContent=modelInfo.display_name||data.active_model||'--';if($('schedulerName'))$('schedulerName').textContent=String(data.scheduler_name||'fifo').toUpperCase();$('statusText').textContent=String(data.status||'IDLE').toUpperCase();$('status').className=`status ${data.status||'idle'}`;gauge('gpuGauge','gpuGaugeText',gpu,'gpu');gauge('computeGauge','computeGaugeText',compute,'compute');gauge('memoryGauge','memoryGaugeText',memoryPct,'memory');$('throughput').textContent=throughput.toFixed(2);$('avgCompute').innerHTML=`${(num(data.avg_compute_time)*1000).toFixed(2)} <span class="unit">ms</span>`;$('minCompute').textContent=(num(data.min_compute_time)*1000).toFixed(2);$('maxCompute').textContent=(num(data.max_compute_time)*1000).toFixed(2);$('totalBatches').textContent=num(data.total_batches);$('eta').textContent=data.eta_seconds==null?'--':`${num(data.eta_seconds).toFixed(1)}s`;$('queueDepth').textContent=num(queue.queue_length);$('completed').textContent=num(data.total_batches);$('avgLatency').textContent=num(metrics.avg_latency_ms||queue.avg_latency_ms).toFixed(2);$('p95Latency').textContent=num(metrics.p95_latency_ms||queue.p95_latency_ms).toFixed(2);$('computeBar').style.width=`${compute}%`;$('computeBarText').textContent=`${compute}%`;$('vramBar').style.width=`${Math.min(100,memoryPct)}%`;$('vramText').textContent=`${memory.toFixed(1)} MB`;$('bandwidthBar').style.width=`${Math.min(100,bandwidth/1e3*100)}%`;$('bandwidthText').textContent=bandwidth?`${bandwidth.toFixed(1)} GB/s`:'--';$('gpuInfo').innerHTML=`<b>${gpuInfo.name||data.selected_gpu||'--'}</b><br>${num(gpuInfo.memory_gb).toFixed(1)} GB memory · ${num(gpuInfo.compute_profile_count)} compute profiles`;$('modelInfo').innerHTML=`<b>${modelInfo.display_name||'--'}</b><br>${modelInfo.description||''}<br>${modelInfo.layers||'--'} layers · ${modelInfo.use_case||''}`;const log=(data.per_request||[]).slice(-6).map(x=>{const ms=num(x.latency_ms),cls=ms<50?'':ms<150?'medium':'slow';return `<div class="${cls}">Batch ${x.request_id||'--'} — ${(ms/1000).toFixed(3)}s — ${new Date(num(x.end_time)*1000||Date.now()).toLocaleTimeString()}</div>`}).join('');$('eventLog').innerHTML=log||'Waiting for event data...';$('startRun').disabled=data.status==='running';$('stopRun').disabled=data.status!=='running';updateCharts(data)}
-async function refresh(){try{const r=await fetch('/api/metrics',{cache:'no-store'});render(await r.json())}catch(e){$('statusText').textContent='OFFLINE'}}
+function updateLiveIndicators(data){const profile=data.profile_stats||{},gpuInfo=data.gpu_info||{},memoryGb=num(data.vram_used_gb,num(profile.memory_peak_gb)),memoryMb=memoryGb*1024,totalMemoryMb=num(gpuInfo.memory_gb)*1024,memoryPct=totalMemoryMb?Math.min(100,memoryMb/totalMemoryMb*100):0,bandwidth=num(data.bandwidth_gbps,num(profile.estimated_bandwidth_gbps));gauge('memoryGauge','memoryGaugeText',memoryPct,'memory');$('vramBar').style.width=`${memoryPct}%`;$('vramText').textContent=`${memoryMb.toFixed(1)} MB`;$('bandwidthBar').style.width=`${Math.min(100,bandwidth/1e3*100)}%`;$('bandwidthText').textContent=bandwidth?`${bandwidth.toFixed(1)} GB/s`:'--';const active=['starting','running','stopping'].includes(data.status);$('startRun').disabled=active;$('stopRun').disabled=data.status!=='running';$('gpuSelector').disabled=active;$('modelSelector').disabled=active;$('schedulerSelector').disabled=active}
+async function refresh(){try{const r=await fetch('/api/metrics',{cache:'no-store'});const data=await r.json();render(data);updateLiveIndicators(data)}catch(e){$('statusText').textContent='OFFLINE'}}
 async function post(path,payload){await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});refresh()}
 if($('gpuSelector'))$('gpuSelector').addEventListener('change',async e=>{await post('/api/set_gpu',{gpu:e.target.value});loadModelTimings(e.target.value);replayEngine()});
 if($('modelSelector'))$('modelSelector').addEventListener('change',async e=>{await post('/api/set_model',{model:e.target.value});replayEngine()});
@@ -2308,8 +2309,10 @@ function addAuditStyles(){
     @keyframes waitPulse{from{box-shadow:0 0 0 transparent}to{box-shadow:0 0 12px var(--red)}}
     .gpu-box{display:grid;place-items:center;min-height:130px;border:2px solid var(--orange);background:#2b2416;color:#fff}
     .sim-controls{display:flex;gap:8px;align-items:center;margin-top:10px}.sim-controls select{padding:7px;background:#202328;color:#fff;border:1px solid var(--border)}
-    .race{display:flex;align-items:end;gap:8px;height:150px;padding:12px;background:#111217;border:1px solid var(--border)}
-    .race-col{flex:1;text-align:center;color:#fff}.race-bar{height:8px;background:var(--orange);transition:height .35s}.race-col small{color:var(--muted)}
+    .race{display:flex;align-items:stretch;gap:12px;min-height:190px;padding:12px 16px;background:#111217;border:1px solid var(--border);overflow:hidden}
+    .race-col{display:flex;flex:1 1 0;min-width:0;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;text-align:center;color:#fff}
+    .race-bar{width:min(44px,70%);max-height:100px;min-height:8px;flex:0 0 auto;background:var(--orange);transition:height .35s}
+    .race-col b{font-size:11px;line-height:1.2}.race-col small{color:var(--muted);font-size:10px;line-height:1.25}
     .layer-stack{display:grid;gap:5px;margin-top:12px}.layer-box{min-height:18px;padding:5px 9px;border-left:4px solid var(--orange);background:#202328;overflow:hidden;transition:height .3s}.layer-box span{font-weight:700}.layer-box small{display:block;color:var(--muted)}
     .traffic-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.traffic-card{padding:10px;background:#111217;border:1px solid var(--border)}.traffic-dots{font-size:18px;letter-spacing:4px;color:var(--orange);min-height:26px}.traffic-dots.uniform{animation:dotPulse 1.2s infinite}.traffic-dots.poisson{animation:dotPulse 1.8s infinite}.traffic-dots.bursty{animation:dotPulse .8s infinite}@keyframes dotPulse{50%{opacity:.45}}
     .legend-note{margin-top:8px;color:var(--muted);font-size:11px}.model-timing-list{max-height:520px;overflow:auto;padding-right:6px}.info-tip{display:inline-grid;place-items:center;width:16px;height:16px;margin-left:4px;border:1px solid var(--muted);border-radius:50%;color:var(--muted);font-size:10px;cursor:help}
@@ -2370,7 +2373,7 @@ function renderRace(data){
   const host=$('schedulerRace');if(!host)return;
   const names=['fifo','sjf','hasp'], colors=['#5794f2','#73bf69','#ff9900'];
   const all=names.flatMap(name=>(data[name]?.completion_times_s||[]));const max=Math.max(0.001,...all);
-  host.innerHTML=names.map((name,index)=>{const times=data[name]?.completion_times_s||[];return `<div class="race-col"><div class="race-bar" style="height:${Math.max(8,Math.min(125,times.length/max*125))}px;background:${colors[index]}"></div><b>${name.toUpperCase()}</b><small>${times.length} completions<br>${max?times.at(-1).toFixed(3):'--'}s total</small></div>`}).join('');
+  host.innerHTML=names.map((name,index)=>{const times=data[name]?.completion_times_s||[];return `<div class="race-col"><div class="race-bar" style="height:${Math.max(8,Math.min(100,times.length/max*100))}px;background:${colors[index]}"></div><b>${name.toUpperCase()}</b><small>${times.length} completions<br>${max?times.at(-1).toFixed(3):'--'}s total</small></div>`}).join('');
 }
 function renderExperimentSummary(data){
   const results=data.results||data, values=Object.values(results).filter(item=>item&&item.schedulers), starvation=values.reduce((acc,item)=>{const sched=item.schedulers||{};return {fifo:acc.fifo+num(sched.fifo?.starvation_count),sjf:acc.sjf+num(sched.sjf?.starvation_count),hasp:acc.hasp+num(sched.hasp?.starvation_count)}},{fifo:0,sjf:0,hasp:0});
@@ -2582,7 +2585,8 @@ def _run_live_engine(selected_gpu: str, selected_model: str, scheduler_name: str
       next_arrival = trace[trace_index]['arrival_time'] if trace_index < len(trace) else elapsed
       _RUN_STOP.wait(max(0.01, min(0.25, next_arrival - elapsed)))
 
-    _update_live_status('completed', engine, selected_gpu, selected_model, scheduler_name, start_time, expected, compute_metrics)
+    final_status = 'stopped' if _RUN_STOP.is_set() else 'completed'
+    _update_live_status(final_status, engine, selected_gpu, selected_model, scheduler_name, start_time, expected, compute_metrics)
   except Exception as exc:
     print(f'[GLIDE live run] failed: {exc}')
     _update_live_status('failed', engine, selected_gpu, selected_model, scheduler_name, start_time, expected, compute_metrics)
@@ -2592,7 +2596,7 @@ def _live_payload(engine: Any, selected_gpu: str, selected_model: str, scheduler
                   start_time: float, expected: int, compute_metrics: Any) -> Dict[str, Any]:
   completed = engine.get_results()
   return {
-    'status': 'running',
+    'status': 'stopping' if _RUN_STOP.is_set() else 'running',
     'scheduler_name': scheduler_name,
     'model': selected_model,
     'gpu': selected_gpu,
@@ -2660,6 +2664,20 @@ def _start_live_engine_run(selected_gpu: str, selected_model: str, scheduler_nam
     if _RUN_THREAD is not None and _RUN_THREAD.is_alive():
       return False
     _RUN_STOP.clear()
+    _clear_metrics_file()
+    _write_live_metrics({
+      'status': 'starting',
+      'scheduler_name': scheduler_name,
+      'model': selected_model,
+      'gpu': selected_gpu,
+      'selected_model': selected_model,
+      'selected_gpu': selected_gpu,
+      'batches': [],
+      'per_request': [],
+      'queue_history': [],
+      'metrics': {},
+      'timestamp': time.time(),
+    })
     _RUN_THREAD = threading.Thread(
       target=_run_live_engine,
       args=(selected_gpu, selected_model, scheduler_name),
@@ -2841,7 +2859,14 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
 
   enriched['selected_gpu'] = selected_gpu
   enriched['gpu_info'] = _gpu_info(selected_gpu)
-  enriched['scheduler_name'] = enriched.get('scheduler_name') or _load_selected_scheduler()
+  selected_scheduler = _load_selected_scheduler()
+  if enriched.get('status') not in ('starting', 'running', 'stopping'):
+    enriched['scheduler_name'] = selected_scheduler
+  else:
+    enriched['scheduler_name'] = enriched.get('scheduler_name') or selected_scheduler
+  if (_RUN_STOP.is_set() and _RUN_THREAD is not None and _RUN_THREAD.is_alive()
+      and enriched.get('status') in ('starting', 'running')):
+    enriched['status'] = 'stopping'
 
   batches: List[Dict[str, Any]] = enriched.get('batches', [])
   if not isinstance(batches, list):
@@ -2868,7 +2893,7 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   enriched['total_batches'] = total_batches
 
   if total_batches == 0:
-    if enriched.get('status') not in ('running', 'completed', 'stopped', 'failed'):
+    if enriched.get('status') not in ('starting', 'running', 'stopping', 'completed', 'stopped', 'failed'):
       enriched['status'] = 'waiting'
     # Use static lookup when no batches
     utilization = get_utilization(selected_gpu, selected_model)
@@ -2958,7 +2983,7 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   enriched['vram_used_gb'] = vram_used
   enriched['bandwidth_gbps'] = bandwidth
 
-  if enriched.get('status') not in ('running', 'completed'):
+  if enriched.get('status') not in ('starting', 'running', 'stopping', 'completed', 'stopped', 'failed'):
     enriched['status'] = 'running'
 
   return enriched
@@ -3350,7 +3375,6 @@ def api_set_scheduler():
 
 @app.route('/api/start_new_run', methods=['POST'])
 def api_start_new_run():
-  _clear_metrics_file()
   selected = _load_selected_model()
   selected_gpu = _load_selected_gpu()
   scheduler = _load_selected_scheduler()
@@ -3358,8 +3382,8 @@ def api_start_new_run():
   started = _start_live_engine_run(selected_gpu, selected, scheduler)
   print(f"[API start_new_run] gpu={selected_gpu} model={selected} scheduler={scheduler} started={started}")
   return jsonify({
-    'ok': True,
-    'status': 'running' if started else 'already_running',
+    'ok': started,
+    'status': 'starting' if started else 'already_running',
     'selected_model': selected,
     'model_info': _model_info(selected),
     'selected_gpu': selected_gpu,
@@ -3367,7 +3391,7 @@ def api_start_new_run():
     'scheduler_name': scheduler,
     'gpu_util': utilization['gpu_util'],
     'compute_util': utilization['compute_util']
-  })
+  }), (202 if started else 409)
 
 
 @app.route('/api/start_run', methods=['POST'])
@@ -3377,17 +3401,19 @@ def api_start_run():
   scheduler = _load_selected_scheduler()
   started = _start_live_engine_run(selected_gpu, selected_model, scheduler)
   print(f"[API start_run] gpu={selected_gpu} model={selected_model} scheduler={scheduler} started={started}")
-  return jsonify({'status': 'started' if started else 'already_running'})
+  return jsonify({'status': 'starting' if started else 'already_running'}), (202 if started else 409)
 
 
 @app.route('/api/stop_run', methods=['POST'])
 def api_stop_run():
   stopped = _stop_live_engine_run()
   current = _load_metrics_file()
-  if not stopped and current.get('status') != 'running':
+  if stopped:
+    print('[API stop_run] stop requested')
+    return jsonify({'status': 'stopping'}), 202
+  if current.get('status') not in ('starting', 'running', 'stopping'):
     return jsonify({'status': 'not_running'})
   _mark_run_stopped()
-  print('[API stop_run] stop requested')
   return jsonify({'status': 'stopped'})
 
 
