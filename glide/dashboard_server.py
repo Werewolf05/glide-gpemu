@@ -2,6 +2,7 @@ import fcntl
 import csv
 import json
 import os
+import re
 import sqlite3
 import statistics
 import sys
@@ -25,6 +26,9 @@ FALLBACK_PROFILED_DATA_ROOT = os.path.join(os.path.dirname(GLIDE_DIR), 'profiled
 DEFAULT_MODEL = 'resnet18'
 DEFAULT_GPU = 'Tesla_M40'
 DEFAULT_SCHEDULER = 'fifo'
+SCHEDULER_VALIDATION_REPORT = os.path.join(
+  PROJECT_ROOT, 'experiment_results', 'hasp_validation_poisson40', 'report.json',
+)
 SCHEDULER_NAMES = ('fifo', 'sjf', 'hasp')
 _RUN_LOCK = threading.Lock()
 _RUN_THREAD: Optional[threading.Thread] = None
@@ -2287,7 +2291,7 @@ if($('startRun'))$('startRun').addEventListener('click',async()=>{await post('/a
 if($('stopRun'))$('stopRun').addEventListener('click',async()=>{await post('/api/stop_run',{});refresh()});
 if($('runExperiments'))$('runExperiments').addEventListener('click',async()=>{await post('/api/run_experiments',{});loadExperiments()});
 if($('profileModel'))$('profileModel').addEventListener('change',e=>loadProfiler(e.target.value));
-loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();refresh();setInterval(refresh,1000);setInterval(loadExperiments,2000);
+loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();refresh();setInterval(refresh,1000);setInterval(()=>loadExperiments(),2000);
 function addAuditStyles(){
   const style=document.createElement('style');
   style.textContent=`
@@ -2353,10 +2357,10 @@ function initSchedulerExample(){
   if(!board||!select||!button)return;
   const requests=[['A','Fast',20],['B','Slow',180],['C','Medium',60],['D','Fast',15],['E','Slow',200]];
   const explanations={
-    FIFO:'Processes requests in the exact order they arrive. Simple but unfair — one slow request blocks everyone behind it.',
-    SJF:'Always picks the fastest remaining request first. Great for overall speed, but slow requests can wait forever: starvation.',
-    HASP:'Balances speed with fairness. The longer a request waits, the more its priority increases, so it eventually runs.'
-  };
+    FIFO:'Processes requests in arrival order. A long request can delay the requests behind it.',
+    SJF:'Favors shorter requests. Under load, this can reduce average latency while increasing long-request tail latency.',
+    HASP:'Combines compute affinity with waiting-time aging. In the saved high-load run, it improved P95 over SJF at a small mean-latency cost.'
+  }
   function draw(){board.innerHTML=requests.map(([id,label,ms])=>`<div class="sim-request" data-id="${id}"><b>${id}</b><small>${label} · ${ms}ms</small><span class="score">waiting</span></div>`).join('');explanation.textContent=explanations[select.value]}
   function play(){draw();const order=select.value==='FIFO'?['A','B','C','D','E']:select.value==='SJF'?['D','A','C','B','E']:['D','A','B','C','E'];let index=0;const timer=setInterval(()=>{if(index>=order.length){clearInterval(timer);return}const id=order[index++];document.querySelectorAll('.sim-request').forEach(el=>{if(el.dataset.id===id){el.classList.remove('waiting');el.classList.add('done');el.querySelector('.score').textContent=select.value==='HASP'?`${id}: score wins (aging boost)`:'processed'}else if(select.value!=='FIFO'&&!el.classList.contains('done')){el.classList.add('waiting');const ms=requests.find(item=>item[0]===el.dataset.id)[2];el.querySelector('.score').textContent=select.value==='HASP'?`${el.dataset.id}: score ${(0.3+index*0.12).toFixed(2)} (+${index*4}%)`:`wait timer ${index*0.8}s`}})},800)}
   select.addEventListener('change',draw);button.addEventListener('click',play);draw();
@@ -2371,18 +2375,33 @@ function renderLayerStack(rows){
 }
 function renderRace(data){
   const host=$('schedulerRace');if(!host)return;
+  if(data.validation_source){host.innerHTML='<p class="legend-note">The saved validation report contains aggregate metrics, not per-request completion timestamps.</p>';return}
   const names=['fifo','sjf','hasp'], colors=['#5794f2','#73bf69','#ff9900'];
   const all=names.flatMap(name=>(data[name]?.completion_times_s||[]));const max=Math.max(0.001,...all);
   host.innerHTML=names.map((name,index)=>{const times=data[name]?.completion_times_s||[];return `<div class="race-col"><div class="race-bar" style="height:${Math.max(8,Math.min(100,times.length/max*100))}px;background:${colors[index]}"></div><b>${name.toUpperCase()}</b><small>${times.length} completions<br>${max?times.at(-1).toFixed(3):'--'}s total</small></div>`}).join('');
 }
 function renderExperimentSummary(data){
-  const results=data.results||data, values=Object.values(results).filter(item=>item&&item.schedulers), starvation=values.reduce((acc,item)=>{const sched=item.schedulers||{};return {fifo:acc.fifo+num(sched.fifo?.starvation_count),sjf:acc.sjf+num(sched.sjf?.starvation_count),hasp:acc.hasp+num(sched.hasp?.starvation_count)}},{fifo:0,sjf:0,hasp:0});
-  const target=$('experimentSummary');if(target)target.innerHTML=`<h2>Measured takeaway</h2><p>Across all four traffic patterns, HASP achieved <b style="color:var(--green)">${starvation.hasp}</b> starvation events while FIFO caused <b>${starvation.fifo}</b> and SJF caused <b>${starvation.sjf}</b>. These counts come directly from the real experiment results.</p>`;
+  const target=$('experimentSummary');if(!target)return;
+  const report=data.validation;
+  if(!report){target.innerHTML='<h2>Measured takeaway</h2><p>No corrected repeated-trial scheduler report is available.</p>';return}
+  const summary=report.summary||{}, sjf=summary.sjf||{}, hasp=summary.hasp||{}, config=report.config||{};
+  const mean=(policy,key,digits=1)=>num(policy[key]?.mean).toFixed(digits);
+  const trialCount=Number(report.trials)||0;
+  target.innerHTML=`<h2>Measured takeaway · ${trialCount} paired trials</h2><p>For the saved high-load Poisson emulator workload, HASP reduced mean P95 latency versus SJF from ${mean(sjf,'p95_latency_ms')} ms to ${mean(hasp,'p95_latency_ms')} ms and increased the Jain latency index from ${mean(sjf,'jains_fairness_index',3)} to ${mean(hasp,'jains_fairness_index',3)}. Mean latency was ${mean(hasp,'avg_latency_ms')} ms for HASP versus ${mean(sjf,'avg_latency_ms')} ms for SJF; throughput was unchanged.</p><p class="legend-note">Configuration: ${config.gpu||'--'}, ${num(config.rate)} requests/s, ${num(config.duration)} s, seeds ${config.seed}–${Number(config.seed||0)+trialCount-1}, HASP aging ${num(config.hasp_aging_threshold_s)} s. The reported relative-outlier count is requests with latency above 3× that trial's mean, not a count of requests that waited forever.</p><p class="legend-note">FIFO has lower P95 latency than HASP in this run. Jain's index is computed on raw latency, so read it alongside latency values rather than as an overall quality score.</p>`;
+  const resultTable=document.querySelector('#experimentResults table');
+  if(resultTable){const lastHeader=resultTable.querySelector('th:last-child');if(lastHeader)lastHeader.textContent='Relative outliers'}
+  const resultNote=document.querySelector('#experimentResults p');
+  if(resultNote)resultNote.textContent='Profile-driven emulator service times; 30 paired seeds with identical arrivals across schedulers.';
+  document.querySelectorAll('#page-experiments h3').forEach(heading=>{if(heading.textContent==='What to look for'&&heading.nextElementSibling)heading.nextElementSibling.textContent='Compare mean and P95 latency, throughput, and the raw-latency Jain index. The relative-outlier count is not indefinite starvation.'});
+  const guide=document.querySelector('.experiments-understand');
+  if(guide){const heading=guide.querySelector('h2'), paragraphs=guide.querySelectorAll('p');if(heading)heading.textContent='How to read this comparison';if(paragraphs[0])paragraphs[0].textContent='All policies were evaluated on the same generated arrivals. This report covers one high-load Poisson workload over 30 paired seeds; it does not represent every arrival pattern.';guide.querySelector('.traffic-grid')?.remove();}
 }
 function renderExperimentTraces(data){
   data=data.results||data;
   const host=$('experimentTraces');if(!host)return;
-  host.innerHTML=Object.entries(data).filter(([,result])=>result&&result.trace).map(([name,result])=>{
+  const entries=Object.entries(data).filter(([,result])=>result&&result.trace);
+  if(!entries.length){host.closest('.review-card')?.remove();return}
+  host.innerHTML=entries.map(([name,result])=>{
     const trace=Array.isArray(result.trace)?result.trace:[], duration=Math.max(1,...trace.map(item=>num(item.arrival_time)));
     const dots=trace.map(item=>`<i title="${item.model_name||'request'} at ${num(item.arrival_time).toFixed(2)}s" style="left:${Math.min(98,num(item.arrival_time)/duration*100)}%"></i>`).join('');
     return `<div class="legend-note"><b>${name}</b><div class="trace">${dots}</div></div>`;
@@ -2404,9 +2423,25 @@ loadProfiler=async function(model){
   }
 };
 const originalLoadScheduler=loadScheduler;
-loadScheduler=async function(){const data=await (await fetch('/api/scheduler_comparison')).json();await originalLoadScheduler();renderRace(data)};
+loadScheduler=async function(){const data=await (await fetch('/api/scheduler_comparison',{cache:'no-store'})).json();await originalLoadScheduler();renderRace(data);const caption=document.querySelector('#page-scheduler .real-caption');if(caption&&data.validation_source){const config=data.config||{};caption.textContent=`Corrected emulator comparison: ${data.trials} paired seeds · ${config.gpu} · Poisson ${config.rate} requests/s · ${config.duration}s · HASP aging ${config.hasp_aging_threshold_s}s. Relative outliers count requests above 3× their trial's mean latency; it does not mean indefinite starvation.`;const outlierLabel=document.querySelector('#page-scheduler #schedulerRows tr:last-child td:first-child');if(outlierLabel)outlierLabel.textContent='Relative outliers (>3× mean)';const raceCard=document.querySelector('#schedulerRace')?.closest('.review-card');if(raceCard){const heading=raceCard.querySelector('h3'),description=raceCard.querySelector('p');if(heading)heading.textContent='Completion timeline';if(description)description.textContent='Per-request completion timestamps are not included in this aggregate report.'}}const note=document.querySelector('.scheduler-understand .legend-note:last-child');if(note&&data.validation_source)note.textContent='Illustration uses example requests. The measured comparison below uses the same generated workload trace for FIFO, SJF, and HASP in every seed.'};
 const originalLoadExperiments=loadExperiments;
-loadExperiments=async function(){const data=await (await fetch('/api/experiment_results',{cache:'no-store'})).json();await originalLoadExperiments();renderExperimentTraces(data);renderExperimentSummary(data);renderScenarioCharts(data.results||{})};
+loadExperiments=async function(){
+  const data=await (await fetch('/api/experiment_results',{cache:'no-store'})).json();
+  if(data.validation){
+    const result=Object.values(data.results||{})[0]||{}, schedulers=result.schedulers||{};
+    const names=['fifo','sjf','hasp'];
+    const format=(value,digits=1)=>num(value).toLocaleString(undefined,{minimumFractionDigits:digits,maximumFractionDigits:digits});
+    const loading=$('experimentLoading'), progress=$('experimentProgress');
+    if(loading)loading.textContent='Corrected repeated-trial validation report loaded.';
+    if(progress)progress.textContent=data.progress||'';
+    $('experimentResults').innerHTML=`<div class="review-card" style="margin-bottom:12px"><h3>High-load Poisson · ${data.validation.trials} paired trials</h3><p class="legend-note">Tesla M40 · 6 models · batch sizes 1, 8, 16, 32 · profile-driven emulator</p><table class="review-table"><tr><th>Scheduler</th><th>Mean ms</th><th>P95 ms</th><th>Throughput /s</th><th>Jain latency index</th><th>Relative outliers (&gt;3× mean)</th></tr>${names.map(name=>{const m=schedulers[name]||{};return `<tr><td>${name.toUpperCase()}</td><td>${format(m.avg_latency_ms)} ± ${format(m.avg_latency_ms_stddev)}</td><td>${format(m.p95_latency_ms)} ± ${format(m.p95_latency_ms_stddev)}</td><td>${format(m.throughput,2)} ± ${format(m.throughput_stddev,2)}</td><td>${format(m.jains_fairness_index,3)} ± ${format(m.jains_fairness_index_stddev,3)}</td><td>${format(m.starvation_count)} ± ${format(m.starvation_count_stddev)}</td></tr>`}).join('')}</table><p class="legend-note">The outlier count is not indefinite starvation. Latency includes service time; Jain's index is computed on raw latency and should be read alongside average and P95.</p></div>`;
+  }else{
+    await originalLoadExperiments();
+  }
+  renderExperimentTraces(data);
+  renderExperimentSummary(data);
+  renderScenarioCharts(data.results||{});
+};
 addAuditStyles();addUnderstanding();loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();
 </script></body></html>
 """
@@ -3238,8 +3273,44 @@ def api_profiler_results():
   return jsonify([{'layer_type': row[0], 'config': row[1], 'compute_cost_ms': row[2], 'memory_cost_mb': row[3], 'pct_of_total': (float(row[2] or 0.0) / total * 100.0) if total else 0.0} for row in rows])
 
 
+def _load_scheduler_validation_report() -> Optional[Dict[str, Any]]:
+  try:
+    with open(SCHEDULER_VALIDATION_REPORT, 'r', encoding='utf-8') as report_file:
+      report = json.load(report_file)
+  except (OSError, json.JSONDecodeError):
+    return None
+  if not isinstance(report, dict) or not isinstance(report.get('results'), dict):
+    return None
+  return report
+
+
+def _scheduler_validation_payload(report: Dict[str, Any]) -> Dict[str, Any]:
+  summary = report.get('results', {}).get('summary', {})
+  payload: Dict[str, Any] = {}
+  for scheduler_name in SCHEDULER_NAMES:
+    metrics = summary.get(scheduler_name, {})
+    payload[scheduler_name] = {
+      metric_name: values.get('mean', 0.0)
+      for metric_name, values in metrics.items()
+      if isinstance(values, dict)
+    }
+    payload[scheduler_name].update({
+      f'{metric_name}_stddev': values.get('stddev', 0.0)
+      for metric_name, values in metrics.items()
+      if isinstance(values, dict)
+    })
+  payload['config'] = report.get('config', {})
+  payload['trials'] = len(report.get('results', {}).get('trials', []))
+  return payload
+
+
 @app.route('/api/scheduler_comparison')
 def api_scheduler_comparison():
+  report = _load_scheduler_validation_report()
+  if report is not None:
+    payload = _scheduler_validation_payload(report)
+    payload['validation_source'] = 'corrected_repeated_experiment'
+    return jsonify(payload)
   return jsonify(_run_scheduler_comparison())
 
 
@@ -3272,6 +3343,38 @@ def api_engine_test():
 
 @app.route('/api/experiment_results')
 def api_experiment_results_real():
+  with _EXPERIMENT_LOCK:
+    state = dict(_EXPERIMENT_STATE)
+  if state.get('status') in ('computing', 'failed'):
+    return jsonify(state)
+
+  report = _load_scheduler_validation_report()
+  if report is not None:
+    scheduler_results = _scheduler_validation_payload(report)
+    validation = {
+      'config': scheduler_results['config'],
+      'trials': scheduler_results['trials'],
+      'summary': report['results'].get('summary', {}),
+    }
+    return jsonify({
+      'status': 'complete',
+      'progress': f"{validation['trials']}/{validation['trials']} paired trials",
+      'results': {
+        'high_load_poisson_validation': {
+          'schedulers': {
+            name: scheduler_results[name]
+            for name in SCHEDULER_NAMES
+          },
+          'config': validation['config'],
+          'trials': validation['trials'],
+        },
+      },
+      'validation': validation,
+    })
+
+  if state.get('status') == 'complete':
+    return jsonify(state)
+
   cache_path = os.path.join(GLIDE_DIR, 'experiment_cache.json')
   if os.path.exists(cache_path):
     try:
@@ -3282,8 +3385,6 @@ def api_experiment_results_real():
           return jsonify({'status': 'complete', 'progress': '12/12 combinations done', 'results': results})
     except (OSError, json.JSONDecodeError):
       cached = None
-  with _EXPERIMENT_LOCK:
-    state = dict(_EXPERIMENT_STATE)
   if state.get('status') in ('computing', 'failed', 'complete'):
     return jsonify(state)
   return jsonify({'status': 'idle', 'progress': '0/12 combinations done', 'results': {}})
@@ -3323,7 +3424,15 @@ def api_model_decomposition():
 
 @app.route('/')
 def dashboard() -> str:
-  return render_template_string(DASHBOARD_HTML)
+  page = render_template_string(DASHBOARD_HTML)
+  for page_id in ('page-scheduler', 'page-experiments'):
+    sections = list(re.finditer(
+      rf'<section id="{page_id}" class="page">.*?</section>', page, re.DOTALL,
+    ))
+    if len(sections) > 1:
+      legacy = sections[0]
+      page = page[:legacy.start()] + page[legacy.end():]
+  return page
 
 
 @app.route('/api/metrics')

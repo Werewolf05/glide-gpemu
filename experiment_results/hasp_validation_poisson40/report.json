@@ -1,0 +1,1469 @@
+{
+  "schema_version": 2,
+  "generated_at": "2026-10-10T11:42:16.324704+00:00",
+  "config": {
+    "name": "hasp_poisson_40rps_validation",
+    "gpu": "Tesla_M40",
+    "models": [
+      "resnet18",
+      "resnet50",
+      "vgg16",
+      "mobilenet_v2",
+      "densenet121",
+      "alexnet"
+    ],
+    "arrival_mode": "poisson",
+    "rate": 40.0,
+    "duration": 15.0,
+    "seed": 42,
+    "batch_sizes": [
+      1,
+      8,
+      16,
+      32
+    ],
+    "hasp_aging_threshold_s": 5.0,
+    "trials": 30,
+    "seed_policy": "base_seed + trial_index"
+  },
+  "results": {
+    "trials": [
+      {
+        "fifo": {
+          "throughput": 31.301045491567283,
+          "avg_latency_ms": 1787.24456850497,
+          "p50_latency_ms": 1642.0986213455199,
+          "p95_latency_ms": 3496.0051661376942,
+          "p99_latency_ms": 3568.3998612918854,
+          "max_latency_ms": 3591.8963169250483,
+          "min_latency_ms": 6.774663925170895,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.781063386832184,
+          "compute_utilisation": 1.0,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.301045491567283,
+          "avg_latency_ms": 663.6815730387442,
+          "p50_latency_ms": 59.47909396743789,
+          "p95_latency_ms": 5628.155897399902,
+          "p99_latency_ms": 10015.45207623291,
+          "max_latency_ms": 11427.597620941162,
+          "min_latency_ms": 4.121827329635508,
+          "starvation_count": 48,
+          "jains_fairness_index": 0.10479139903276388,
+          "compute_utilisation": 1.0,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.301045491567283,
+          "avg_latency_ms": 706.7125216653495,
+          "p50_latency_ms": 59.78742408370974,
+          "p95_latency_ms": 4589.984843749999,
+          "p99_latency_ms": 6171.59531936264,
+          "max_latency_ms": 6470.461750089644,
+          "min_latency_ms": 4.66332880783081,
+          "starvation_count": 79,
+          "jains_fairness_index": 0.17866537224325416,
+          "compute_utilisation": 1.0,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.283951106767248,
+          "avg_latency_ms": 2485.402191989421,
+          "p50_latency_ms": 2470.1129886112217,
+          "p95_latency_ms": 4906.72382523346,
+          "p99_latency_ms": 5053.470460145951,
+          "max_latency_ms": 5129.551770250321,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7237864848790594,
+          "compute_utilisation": 0.9988518073419179,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.283951106767248,
+          "avg_latency_ms": 912.3129151672416,
+          "p50_latency_ms": 52.9586256446839,
+          "p95_latency_ms": 8265.959050605774,
+          "p99_latency_ms": 12730.174774147034,
+          "max_latency_ms": 14093.451827796936,
+          "min_latency_ms": 5.522645492554545,
+          "starvation_count": 47,
+          "jains_fairness_index": 0.10838142228647331,
+          "compute_utilisation": 0.9988518073419179,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.283951106767248,
+          "avg_latency_ms": 982.5225098869595,
+          "p50_latency_ms": 62.656539104462894,
+          "p95_latency_ms": 6346.838107330323,
+          "p99_latency_ms": 8272.514310638428,
+          "max_latency_ms": 8518.729543090822,
+          "min_latency_ms": 4.045540645599477,
+          "starvation_count": 82,
+          "jains_fairness_index": 0.17636501520283884,
+          "compute_utilisation": 0.9988518073419179,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.258872143358836,
+          "avg_latency_ms": 2797.3531129940425,
+          "p50_latency_ms": 2913.019215032578,
+          "p95_latency_ms": 4831.509134946824,
+          "p99_latency_ms": 5000.535912231445,
+          "max_latency_ms": 5070.538535596847,
+          "min_latency_ms": 6.7746639251709,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7804558643099966,
+          "compute_utilisation": 0.9982768536266956,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.258872143358836,
+          "avg_latency_ms": 1017.05619121601,
+          "p50_latency_ms": 58.93072049331671,
+          "p95_latency_ms": 9270.313948692323,
+          "p99_latency_ms": 13984.698672233582,
+          "max_latency_ms": 15039.609725883483,
+          "min_latency_ms": 4.184396595001694,
+          "starvation_count": 52,
+          "jains_fairness_index": 0.10708250395847986,
+          "compute_utilisation": 0.9982768536266956,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.258872143358836,
+          "avg_latency_ms": 1104.2054423664422,
+          "p50_latency_ms": 61.52989111900453,
+          "p95_latency_ms": 6810.899281961441,
+          "p99_latency_ms": 8512.782076128007,
+          "max_latency_ms": 8951.802837810517,
+          "min_latency_ms": 4.4912093086253435,
+          "starvation_count": 89,
+          "jains_fairness_index": 0.18778457596383144,
+          "compute_utilisation": 0.9982768536266956,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.299835589355578,
+          "avg_latency_ms": 1778.1454843077986,
+          "p50_latency_ms": 1848.6546129970548,
+          "p95_latency_ms": 2934.564028152465,
+          "p99_latency_ms": 3101.3083384380325,
+          "max_latency_ms": 3156.0057434082028,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.8221691437548979,
+          "compute_utilisation": 0.9994500538249947,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.299835589355578,
+          "avg_latency_ms": 655.3161363012222,
+          "p50_latency_ms": 60.34936841964722,
+          "p95_latency_ms": 6021.401235641479,
+          "p99_latency_ms": 9848.144378707886,
+          "max_latency_ms": 10551.276905532835,
+          "min_latency_ms": 4.0305904083250965,
+          "starvation_count": 47,
+          "jains_fairness_index": 0.09864872009455247,
+          "compute_utilisation": 0.9994500538249947,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.299835589355578,
+          "avg_latency_ms": 704.5052593026908,
+          "p50_latency_ms": 62.76131981849531,
+          "p95_latency_ms": 4437.997792179108,
+          "p99_latency_ms": 6099.108615221023,
+          "max_latency_ms": 6395.710736881256,
+          "min_latency_ms": 4.33008301734894,
+          "starvation_count": 81,
+          "jains_fairness_index": 0.18322117303337707,
+          "compute_utilisation": 0.9994500538249947,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.231056518686827,
+          "avg_latency_ms": 1967.0302094659664,
+          "p50_latency_ms": 2277.366601432801,
+          "p95_latency_ms": 3198.9091278610235,
+          "p99_latency_ms": 3586.708843116762,
+          "max_latency_ms": 3645.1503268737806,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.8412377169778431,
+          "compute_utilisation": 0.9972341540642079,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.231056518686827,
+          "avg_latency_ms": 725.9328411531372,
+          "p50_latency_ms": 58.57905317878753,
+          "p95_latency_ms": 7244.806538589479,
+          "p99_latency_ms": 10296.631577239992,
+          "max_latency_ms": 11304.254121948245,
+          "min_latency_ms": 4.4392244815827375,
+          "starvation_count": 46,
+          "jains_fairness_index": 0.10411761404816272,
+          "compute_utilisation": 0.9972341540642079,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.231056518686827,
+          "avg_latency_ms": 780.7444586123834,
+          "p50_latency_ms": 59.660357673645414,
+          "p95_latency_ms": 4869.674009771348,
+          "p99_latency_ms": 6322.786481769564,
+          "max_latency_ms": 6728.762824817659,
+          "min_latency_ms": 4.4392244815827375,
+          "starvation_count": 86,
+          "jains_fairness_index": 0.19004250440710055,
+          "compute_utilisation": 0.9972341540642079,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.36423000578897,
+          "avg_latency_ms": 2008.7004367214292,
+          "p50_latency_ms": 2130.7773845367437,
+          "p95_latency_ms": 3622.7174161987323,
+          "p99_latency_ms": 3704.2451720066083,
+          "max_latency_ms": 3744.237885780336,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7706426619420557,
+          "compute_utilisation": 0.9996080097417659,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.36423000578897,
+          "avg_latency_ms": 734.3120519637412,
+          "p50_latency_ms": 63.355715059280726,
+          "p95_latency_ms": 6855.242583847046,
+          "p99_latency_ms": 11527.966780563356,
+          "max_latency_ms": 11881.410687265397,
+          "min_latency_ms": 4.120464530944723,
+          "starvation_count": 45,
+          "jains_fairness_index": 0.09490128516654124,
+          "compute_utilisation": 0.9996080097417659,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.36423000578897,
+          "avg_latency_ms": 792.8968421485538,
+          "p50_latency_ms": 64.17682516670232,
+          "p95_latency_ms": 5138.607432632448,
+          "p99_latency_ms": 6987.697390235901,
+          "max_latency_ms": 7201.972464483262,
+          "min_latency_ms": 4.156918975830148,
+          "starvation_count": 78,
+          "jains_fairness_index": 0.17693249875244907,
+          "compute_utilisation": 0.9996080097417659,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.342720770638913,
+          "avg_latency_ms": 1634.3446655488174,
+          "p50_latency_ms": 1848.7342581710814,
+          "p95_latency_ms": 2418.79839955139,
+          "p99_latency_ms": 2610.2382884082776,
+          "max_latency_ms": 2665.376549705504,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.8756924800984844,
+          "compute_utilisation": 1.0,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.342720770638913,
+          "avg_latency_ms": 607.1878434092508,
+          "p50_latency_ms": 56.24452650642397,
+          "p95_latency_ms": 6004.233269918441,
+          "p99_latency_ms": 8022.504323568345,
+          "max_latency_ms": 9060.289868276597,
+          "min_latency_ms": 4.33886064148048,
+          "starvation_count": 45,
+          "jains_fairness_index": 0.10756533050869793,
+          "compute_utilisation": 1.0,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.342720770638913,
+          "avg_latency_ms": 646.2849484571703,
+          "p50_latency_ms": 61.231836219787674,
+          "p95_latency_ms": 4265.991999174119,
+          "p99_latency_ms": 5156.359724615097,
+          "max_latency_ms": 5508.057484474182,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 82,
+          "jains_fairness_index": 0.18818567879708903,
+          "compute_utilisation": 1.0,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.363734302774365,
+          "avg_latency_ms": 2768.1156329606033,
+          "p50_latency_ms": 2788.8201858806624,
+          "p95_latency_ms": 5355.115739021302,
+          "p99_latency_ms": 5555.360061271669,
+          "max_latency_ms": 5610.464083511353,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7361440015131963,
+          "compute_utilisation": 0.9996803466695992,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.363734302774365,
+          "avg_latency_ms": 1010.9357276694953,
+          "p50_latency_ms": 57.88160359382621,
+          "p95_latency_ms": 9106.325907752991,
+          "p99_latency_ms": 13498.746140235902,
+          "max_latency_ms": 15014.284193885804,
+          "min_latency_ms": 4.033186510087106,
+          "starvation_count": 54,
+          "jains_fairness_index": 0.11148267102120711,
+          "compute_utilisation": 0.9996803466695992,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.363734302774365,
+          "avg_latency_ms": 1089.6654058524086,
+          "p50_latency_ms": 60.231349603654394,
+          "p95_latency_ms": 6914.272653982163,
+          "p99_latency_ms": 8843.525603546144,
+          "max_latency_ms": 9105.443011602403,
+          "min_latency_ms": 5.973439144135284,
+          "starvation_count": 85,
+          "jains_fairness_index": 0.1804988682448411,
+          "compute_utilisation": 0.9996803466695992,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.34943509573483,
+          "avg_latency_ms": 2153.791663351676,
+          "p50_latency_ms": 2202.6565269088733,
+          "p95_latency_ms": 4025.4247869567853,
+          "p99_latency_ms": 4178.618795372008,
+          "max_latency_ms": 4238.27885642433,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7555522676970976,
+          "compute_utilisation": 0.9985706521471754,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.34943509573483,
+          "avg_latency_ms": 785.0109837716909,
+          "p50_latency_ms": 56.42447611427137,
+          "p95_latency_ms": 7241.831490549087,
+          "p99_latency_ms": 12136.777687265396,
+          "max_latency_ms": 13033.474740915297,
+          "min_latency_ms": 4.570447069166761,
+          "starvation_count": 46,
+          "jains_fairness_index": 0.0954464979192624,
+          "compute_utilisation": 0.9985706521471754,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.34943509573483,
+          "avg_latency_ms": 849.7394245566237,
+          "p50_latency_ms": 59.28977676963676,
+          "p95_latency_ms": 5394.381756427764,
+          "p99_latency_ms": 7193.599917541503,
+          "max_latency_ms": 7590.222696350096,
+          "min_latency_ms": 5.0264452915183,
+          "starvation_count": 83,
+          "jains_fairness_index": 0.17730220248782702,
+          "compute_utilisation": 0.9985706521471754,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 30.79969919450062,
+          "avg_latency_ms": 1701.2805577228792,
+          "p50_latency_ms": 1724.697958084107,
+          "p95_latency_ms": 3656.718020370484,
+          "p99_latency_ms": 3797.152611335756,
+          "max_latency_ms": 3851.6686538009653,
+          "min_latency_ms": 4.003763198852539,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.6700421687938182,
+          "compute_utilisation": 0.9834605484217972,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 30.79969919450062,
+          "avg_latency_ms": 634.4508760175627,
+          "p50_latency_ms": 55.435091457367136,
+          "p95_latency_ms": 5597.333476837159,
+          "p99_latency_ms": 9997.140673553467,
+          "max_latency_ms": 11168.449218261721,
+          "min_latency_ms": 4.003763198852539,
+          "starvation_count": 40,
+          "jains_fairness_index": 0.09567007330912593,
+          "compute_utilisation": 0.9834605484217972,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 30.79969919450062,
+          "avg_latency_ms": 678.5794733664396,
+          "p50_latency_ms": 61.81602387237639,
+          "p95_latency_ms": 4897.420957479478,
+          "p99_latency_ms": 6558.931746694565,
+          "max_latency_ms": 6905.103717338562,
+          "min_latency_ms": 4.003763198852539,
+          "starvation_count": 69,
+          "jains_fairness_index": 0.16012557504294256,
+          "compute_utilisation": 0.9834605484217972,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.285947974426822,
+          "avg_latency_ms": 2041.9280891352917,
+          "p50_latency_ms": 2025.3548931732173,
+          "p95_latency_ms": 3810.6899234600055,
+          "p99_latency_ms": 4106.814638715743,
+          "max_latency_ms": 4186.740333869933,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7681809785705744,
+          "compute_utilisation": 0.9980163121011579,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.285947974426822,
+          "avg_latency_ms": 745.5481332045496,
+          "p50_latency_ms": 57.4054231204979,
+          "p95_latency_ms": 7025.238168943405,
+          "p99_latency_ms": 11477.220856718062,
+          "max_latency_ms": 12598.077401426315,
+          "min_latency_ms": 5.999970966338974,
+          "starvation_count": 48,
+          "jains_fairness_index": 0.09514488172117587,
+          "compute_utilisation": 0.9980163121011579,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.285947974426822,
+          "avg_latency_ms": 806.1415208998236,
+          "p50_latency_ms": 60.491838230133155,
+          "p95_latency_ms": 5282.529696228026,
+          "p99_latency_ms": 7122.311104877472,
+          "max_latency_ms": 7388.9449389839165,
+          "min_latency_ms": 4.2359091758727985,
+          "starvation_count": 80,
+          "jains_fairness_index": 0.17718238027457703,
+          "compute_utilisation": 0.9980163121011579,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.164097998727836,
+          "avg_latency_ms": 2551.8358849686238,
+          "p50_latency_ms": 2695.2148986511233,
+          "p95_latency_ms": 4191.671648151395,
+          "p99_latency_ms": 4308.0042773189525,
+          "max_latency_ms": 4369.120725912092,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.8031560446743675,
+          "compute_utilisation": 0.9941681175239956,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.164097998727836,
+          "avg_latency_ms": 930.7476050358867,
+          "p50_latency_ms": 59.82889613723774,
+          "p95_latency_ms": 8577.007830503462,
+          "p99_latency_ms": 12839.424027219773,
+          "max_latency_ms": 13654.761099349977,
+          "min_latency_ms": 5.725158626557203,
+          "starvation_count": 49,
+          "jains_fairness_index": 0.10459563823674138,
+          "compute_utilisation": 0.9941681175239956,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.164097998727836,
+          "avg_latency_ms": 1007.2936163546498,
+          "p50_latency_ms": 61.861755317687894,
+          "p95_latency_ms": 6151.728054784774,
+          "p99_latency_ms": 7979.172240678788,
+          "max_latency_ms": 8244.335018421174,
+          "min_latency_ms": 5.111970472335692,
+          "starvation_count": 87,
+          "jains_fairness_index": 0.18794170867759452,
+          "compute_utilisation": 0.9941681175239956,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.145566242681546,
+          "avg_latency_ms": 2004.7409222100819,
+          "p50_latency_ms": 2050.53220388794,
+          "p95_latency_ms": 3416.3781627426138,
+          "p99_latency_ms": 3495.440624483109,
+          "max_latency_ms": 3538.4404808101644,
+          "min_latency_ms": 6.7746639251709055,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7737246847604636,
+          "compute_utilisation": 0.9937041668269438,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.145566242681546,
+          "avg_latency_ms": 733.2950376363316,
+          "p50_latency_ms": 54.66742342567454,
+          "p95_latency_ms": 7293.420114934921,
+          "p99_latency_ms": 11071.922125854491,
+          "max_latency_ms": 11669.140802709579,
+          "min_latency_ms": 4.354641210555954,
+          "starvation_count": 45,
+          "jains_fairness_index": 0.09544521646157483,
+          "compute_utilisation": 0.9937041668269438,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.145566242681546,
+          "avg_latency_ms": 792.38979188197,
+          "p50_latency_ms": 59.566487834930015,
+          "p95_latency_ms": 5106.241456428527,
+          "p99_latency_ms": 6714.14246108818,
+          "max_latency_ms": 7146.239616174698,
+          "min_latency_ms": 4.204254947662633,
+          "starvation_count": 77,
+          "jains_fairness_index": 0.1771968504654964,
+          "compute_utilisation": 0.9937041668269438,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.22866676098586,
+          "avg_latency_ms": 1913.0101006966095,
+          "p50_latency_ms": 1707.462833129883,
+          "p95_latency_ms": 3513.0052523498525,
+          "p99_latency_ms": 3784.409197366715,
+          "max_latency_ms": 3813.772887262344,
+          "min_latency_ms": 6.774663925170899,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7938466505197991,
+          "compute_utilisation": 0.996352889484146,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.22866676098586,
+          "avg_latency_ms": 701.9358036122729,
+          "p50_latency_ms": 57.8936014575957,
+          "p95_latency_ms": 6019.466813829422,
+          "p99_latency_ms": 11182.651332168578,
+          "max_latency_ms": 12050.333884534837,
+          "min_latency_ms": 4.303855033874537,
+          "starvation_count": 48,
+          "jains_fairness_index": 0.09836462160475175,
+          "compute_utilisation": 0.996352889484146,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.22866676098586,
+          "avg_latency_ms": 752.2687381411673,
+          "p50_latency_ms": 55.29693527030943,
+          "p95_latency_ms": 4928.515206764221,
+          "p99_latency_ms": 6485.264280704499,
+          "max_latency_ms": 6921.08651315689,
+          "min_latency_ms": 4.054396419525652,
+          "starvation_count": 83,
+          "jains_fairness_index": 0.1806650840383251,
+          "compute_utilisation": 0.996352889484146,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.23702495485949,
+          "avg_latency_ms": 2114.567639757755,
+          "p50_latency_ms": 2317.0318331298836,
+          "p95_latency_ms": 3472.5075932540894,
+          "p99_latency_ms": 3649.106998796464,
+          "max_latency_ms": 3713.418128341676,
+          "min_latency_ms": 4.003763198852539,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.8324790670934065,
+          "compute_utilisation": 0.997989063822372,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.23702495485949,
+          "avg_latency_ms": 773.4402190014315,
+          "p50_latency_ms": 56.79307764244079,
+          "p95_latency_ms": 7660.686991746903,
+          "p99_latency_ms": 11243.01262587166,
+          "max_latency_ms": 12121.572661638262,
+          "min_latency_ms": 4.003763198852539,
+          "starvation_count": 47,
+          "jains_fairness_index": 0.09965882534541094,
+          "compute_utilisation": 0.997989063822372,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.23702495485949,
+          "avg_latency_ms": 836.0518748409899,
+          "p50_latency_ms": 56.51736643600458,
+          "p95_latency_ms": 5191.040526920319,
+          "p99_latency_ms": 6706.870375080109,
+          "max_latency_ms": 7240.156272377014,
+          "min_latency_ms": 4.003763198852539,
+          "starvation_count": 85,
+          "jains_fairness_index": 0.18829393457843657,
+          "compute_utilisation": 0.997989063822372,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.25381563675149,
+          "avg_latency_ms": 2563.892213011091,
+          "p50_latency_ms": 2674.9372150325785,
+          "p95_latency_ms": 4957.768333478928,
+          "p99_latency_ms": 5165.7803848094945,
+          "max_latency_ms": 5246.033535596847,
+          "min_latency_ms": 6.7746639251708975,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7594120695303962,
+          "compute_utilisation": 0.9961605956385098,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.25381563675149,
+          "avg_latency_ms": 930.4055609579892,
+          "p50_latency_ms": 56.74679067421007,
+          "p95_latency_ms": 8680.037011152268,
+          "p99_latency_ms": 13399.469225751878,
+          "max_latency_ms": 14554.65027940178,
+          "min_latency_ms": 4.310447052002786,
+          "starvation_count": 50,
+          "jains_fairness_index": 0.09981744057918289,
+          "compute_utilisation": 0.9961605956385098,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.25381563675149,
+          "avg_latency_ms": 1011.4082311727735,
+          "p50_latency_ms": 61.519568889618185,
+          "p95_latency_ms": 6426.214283248902,
+          "p99_latency_ms": 8341.934386907578,
+          "max_latency_ms": 8837.89028302765,
+          "min_latency_ms": 4.0184793777466865,
+          "starvation_count": 88,
+          "jains_fairness_index": 0.18184377285709175,
+          "compute_utilisation": 0.9961605956385098,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.31023424468874,
+          "avg_latency_ms": 2087.7672380616245,
+          "p50_latency_ms": 2110.9506394271857,
+          "p95_latency_ms": 3551.2896920776366,
+          "p99_latency_ms": 3704.419003664018,
+          "max_latency_ms": 3789.516264961243,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7897369076419881,
+          "compute_utilisation": 0.9999840428931458,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.31023424468874,
+          "avg_latency_ms": 762.684301509789,
+          "p50_latency_ms": 61.008229911803994,
+          "p95_latency_ms": 7489.358836626053,
+          "p99_latency_ms": 11405.69799757576,
+          "max_latency_ms": 12086.637033342364,
+          "min_latency_ms": 4.018983858108172,
+          "starvation_count": 47,
+          "jains_fairness_index": 0.09493750347038071,
+          "compute_utilisation": 0.9999840428931458,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.31023424468874,
+          "avg_latency_ms": 825.038412213298,
+          "p50_latency_ms": 60.35453447151185,
+          "p95_latency_ms": 5207.68682892418,
+          "p99_latency_ms": 6901.968375280381,
+          "max_latency_ms": 7278.827644081116,
+          "min_latency_ms": 5.394014842988071,
+          "starvation_count": 80,
+          "jains_fairness_index": 0.18118630826271803,
+          "compute_utilisation": 0.9999840428931458,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.131640456470333,
+          "avg_latency_ms": 2254.8781078690276,
+          "p50_latency_ms": 2310.753608037948,
+          "p95_latency_ms": 4132.550277318952,
+          "p99_latency_ms": 4409.521626005171,
+          "max_latency_ms": 4498.958010938642,
+          "min_latency_ms": 6.774663925170899,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7718323161489784,
+          "compute_utilisation": 0.994562959719144,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.131640456470333,
+          "avg_latency_ms": 824.2345925900664,
+          "p50_latency_ms": 59.22553665733332,
+          "p95_latency_ms": 7673.76879201889,
+          "p99_latency_ms": 12605.90456211853,
+          "max_latency_ms": 13531.991615768433,
+          "min_latency_ms": 4.71962699127193,
+          "starvation_count": 48,
+          "jains_fairness_index": 0.09638896859814308,
+          "compute_utilisation": 0.994562959719144,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.131640456470333,
+          "avg_latency_ms": 892.9476481312503,
+          "p50_latency_ms": 61.52607350921535,
+          "p95_latency_ms": 5746.497146440504,
+          "p99_latency_ms": 7337.255194688796,
+          "max_latency_ms": 7884.296496955871,
+          "min_latency_ms": 4.919157024383836,
+          "starvation_count": 83,
+          "jains_fairness_index": 0.18121786044124344,
+          "compute_utilisation": 0.994562959719144,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.296786986200832,
+          "avg_latency_ms": 2499.0395348921315,
+          "p50_latency_ms": 2548.0052636413575,
+          "p95_latency_ms": 4685.164985969541,
+          "p99_latency_ms": 4950.8030315475435,
+          "max_latency_ms": 5056.779416481016,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7705023665717399,
+          "compute_utilisation": 0.9992616386105866,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.296786986200832,
+          "avg_latency_ms": 909.5329183643677,
+          "p50_latency_ms": 58.17980039214987,
+          "p95_latency_ms": 8368.641068489072,
+          "p99_latency_ms": 13511.195792030332,
+          "max_latency_ms": 14634.251845680235,
+          "min_latency_ms": 4.377325218200667,
+          "starvation_count": 51,
+          "jains_fairness_index": 0.09918522147740963,
+          "compute_utilisation": 0.9992616386105866,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.296786986200832,
+          "avg_latency_ms": 988.8210512927627,
+          "p50_latency_ms": 62.03475097465461,
+          "p95_latency_ms": 6191.871015199661,
+          "p99_latency_ms": 8048.220310638426,
+          "max_latency_ms": 8349.911904603956,
+          "min_latency_ms": 4.653480012893674,
+          "starvation_count": 87,
+          "jains_fairness_index": 0.185465287782346,
+          "compute_utilisation": 0.9992616386105866,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.258069682218842,
+          "avg_latency_ms": 2317.616515153797,
+          "p50_latency_ms": 2419.07971261406,
+          "p95_latency_ms": 4115.982648151398,
+          "p99_latency_ms": 4255.173191106797,
+          "max_latency_ms": 4344.407222335816,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7957764836842979,
+          "compute_utilisation": 0.9986019959893738,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.258069682218842,
+          "avg_latency_ms": 843.8033555774821,
+          "p50_latency_ms": 58.8056270389572,
+          "p95_latency_ms": 7711.901856460573,
+          "p99_latency_ms": 12375.01205317688,
+          "max_latency_ms": 13461.330106826783,
+          "min_latency_ms": 4.670301092149387,
+          "starvation_count": 49,
+          "jains_fairness_index": 0.09723746406279918,
+          "compute_utilisation": 0.9986019959893738,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.258069682218842,
+          "avg_latency_ms": 916.7531521471452,
+          "p50_latency_ms": 57.595998619079936,
+          "p95_latency_ms": 5649.714146440507,
+          "p99_latency_ms": 7404.358153907778,
+          "max_latency_ms": 7921.467498022081,
+          "min_latency_ms": 4.889000411987254,
+          "starvation_count": 85,
+          "jains_fairness_index": 0.18545567259919665,
+          "compute_utilisation": 0.9986019959893738,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.19557779699152,
+          "avg_latency_ms": 2195.416425979793,
+          "p50_latency_ms": 2267.507017763137,
+          "p95_latency_ms": 3864.3182829685206,
+          "p99_latency_ms": 4168.146956041335,
+          "max_latency_ms": 4238.8984287357325,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7502516414548807,
+          "compute_utilisation": 0.9962990419014216,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.19557779699152,
+          "avg_latency_ms": 806.1604320504523,
+          "p50_latency_ms": 59.328244709014655,
+          "p95_latency_ms": 7601.897491458893,
+          "p99_latency_ms": 11941.306704576493,
+          "max_latency_ms": 12643.918723941802,
+          "min_latency_ms": 4.47383297920223,
+          "starvation_count": 47,
+          "jains_fairness_index": 0.10104250199197312,
+          "compute_utilisation": 0.9962990419014216,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.19557779699152,
+          "avg_latency_ms": 867.4488510319501,
+          "p50_latency_ms": 61.25234142875691,
+          "p95_latency_ms": 5642.771540231704,
+          "p99_latency_ms": 7548.27804799652,
+          "max_latency_ms": 7793.292640895843,
+          "min_latency_ms": 4.47383297920223,
+          "starvation_count": 79,
+          "jains_fairness_index": 0.17587705772685097,
+          "compute_utilisation": 0.9962990419014216,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.22692073798681,
+          "avg_latency_ms": 2799.039704655345,
+          "p50_latency_ms": 3073.1254955940244,
+          "p95_latency_ms": 5077.087221035003,
+          "p99_latency_ms": 5253.6523412609085,
+          "max_latency_ms": 5317.200198888777,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7603132232161754,
+          "compute_utilisation": 0.9983230528023683,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.22692073798681,
+          "avg_latency_ms": 1031.4447813311224,
+          "p50_latency_ms": 59.30595736122157,
+          "p95_latency_ms": 8952.990359838484,
+          "p99_latency_ms": 13395.958083379743,
+          "max_latency_ms": 14567.650137029648,
+          "min_latency_ms": 4.275104177475342,
+          "starvation_count": 50,
+          "jains_fairness_index": 0.11661089275159028,
+          "compute_utilisation": 0.9983230528023683,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.22692073798681,
+          "avg_latency_ms": 1107.6864637443805,
+          "p50_latency_ms": 62.922446592330594,
+          "p95_latency_ms": 6902.685390727994,
+          "p99_latency_ms": 8878.511796541212,
+          "max_latency_ms": 9237.880649597168,
+          "min_latency_ms": 4.543146265030273,
+          "starvation_count": 90,
+          "jains_fairness_index": 0.1841231026936325,
+          "compute_utilisation": 0.9983230528023683,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.150108769972544,
+          "avg_latency_ms": 2089.674254391472,
+          "p50_latency_ms": 2303.117819107056,
+          "p95_latency_ms": 3884.240394598006,
+          "p99_latency_ms": 4078.595042129516,
+          "max_latency_ms": 4168.0235148239135,
+          "min_latency_ms": 4.003763198852539,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7892965785657597,
+          "compute_utilisation": 0.9959969740205431,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.150108769972544,
+          "avg_latency_ms": 768.8812479473347,
+          "p50_latency_ms": 60.96727546501159,
+          "p95_latency_ms": 7539.593166831969,
+          "p99_latency_ms": 11346.721327781677,
+          "max_latency_ms": 12447.13387248993,
+          "min_latency_ms": 4.003763198852539,
+          "starvation_count": 49,
+          "jains_fairness_index": 0.0992631368679331,
+          "compute_utilisation": 0.9959969740205431,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.150108769972544,
+          "avg_latency_ms": 828.6376970022864,
+          "p50_latency_ms": 59.57766515731855,
+          "p95_latency_ms": 5250.198568473815,
+          "p99_latency_ms": 7036.428010635374,
+          "max_latency_ms": 7468.805583209992,
+          "min_latency_ms": 4.003763198852539,
+          "starvation_count": 84,
+          "jains_fairness_index": 0.18344497946203503,
+          "compute_utilisation": 0.9959969740205431,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.31242641180618,
+          "avg_latency_ms": 1940.9751808009742,
+          "p50_latency_ms": 1869.7762288570407,
+          "p95_latency_ms": 3411.9466711788177,
+          "p99_latency_ms": 3504.49547684288,
+          "max_latency_ms": 3550.487528806686,
+          "min_latency_ms": 6.7746639251709,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7335299766060694,
+          "compute_utilisation": 0.9988999528304894,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.31242641180618,
+          "avg_latency_ms": 718.6457535197868,
+          "p50_latency_ms": 61.75510397720352,
+          "p95_latency_ms": 6776.637410284041,
+          "p99_latency_ms": 10570.170840414046,
+          "max_latency_ms": 11176.747294677736,
+          "min_latency_ms": 4.078622381210373,
+          "starvation_count": 53,
+          "jains_fairness_index": 0.1042274680670866,
+          "compute_utilisation": 0.9988999528304894,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.31242641180618,
+          "avg_latency_ms": 765.4659452380108,
+          "p50_latency_ms": 56.28362929725661,
+          "p95_latency_ms": 5116.243262744904,
+          "p99_latency_ms": 6886.487055433274,
+          "max_latency_ms": 7176.135642141343,
+          "min_latency_ms": 4.1849439449315184,
+          "starvation_count": 74,
+          "jains_fairness_index": 0.169803349139568,
+          "compute_utilisation": 0.9988999528304894,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.300119698091677,
+          "avg_latency_ms": 2168.0217235869573,
+          "p50_latency_ms": 1884.7902421646118,
+          "p95_latency_ms": 3997.7384161987306,
+          "p99_latency_ms": 4352.640912622452,
+          "max_latency_ms": 4460.500602518081,
+          "min_latency_ms": 6.774663925170899,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7474775571038484,
+          "compute_utilisation": 0.9996155411912577,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.300119698091677,
+          "avg_latency_ms": 797.5386441664355,
+          "p50_latency_ms": 56.78521475791953,
+          "p95_latency_ms": 7181.378218759535,
+          "p99_latency_ms": 12038.954433359144,
+          "max_latency_ms": 13153.551487009048,
+          "min_latency_ms": 4.640453519821008,
+          "starvation_count": 48,
+          "jains_fairness_index": 0.10116991213534582,
+          "compute_utilisation": 0.9996155411912577,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.300119698091677,
+          "avg_latency_ms": 857.4754238353969,
+          "p50_latency_ms": 59.030040054320665,
+          "p95_latency_ms": 5606.394429489135,
+          "p99_latency_ms": 7257.648227874755,
+          "max_latency_ms": 7638.05095031929,
+          "min_latency_ms": 4.014260812759574,
+          "starvation_count": 83,
+          "jains_fairness_index": 0.17705352714769132,
+          "compute_utilisation": 0.9996155411912577,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.134951829993135,
+          "avg_latency_ms": 2328.42801753027,
+          "p50_latency_ms": 2629.032044771195,
+          "p95_latency_ms": 4204.546657196046,
+          "p99_latency_ms": 4307.744829292298,
+          "max_latency_ms": 4344.656709159852,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7553737810165667,
+          "compute_utilisation": 0.9944278034206342,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.134951829993135,
+          "avg_latency_ms": 851.302924015259,
+          "p50_latency_ms": 61.32961698150652,
+          "p95_latency_ms": 8122.016196556093,
+          "p99_latency_ms": 12466.78490221405,
+          "max_latency_ms": 13301.758479227066,
+          "min_latency_ms": 4.195150154114202,
+          "starvation_count": 47,
+          "jains_fairness_index": 0.09956188666660809,
+          "compute_utilisation": 0.9944278034206342,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.134951829993135,
+          "avg_latency_ms": 922.1972207238675,
+          "p50_latency_ms": 61.51969091415488,
+          "p95_latency_ms": 5921.3492512550365,
+          "p99_latency_ms": 7805.157679912569,
+          "max_latency_ms": 8023.21473414612,
+          "min_latency_ms": 4.692789634704598,
+          "starvation_count": 80,
+          "jains_fairness_index": 0.17923590001575107,
+          "compute_utilisation": 0.9944278034206342,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.185062893296447,
+          "avg_latency_ms": 2093.0508263914453,
+          "p50_latency_ms": 2139.0871853084564,
+          "p95_latency_ms": 3780.7440106563545,
+          "p99_latency_ms": 3969.4390237655616,
+          "max_latency_ms": 4060.543364707945,
+          "min_latency_ms": 6.774663925170898,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7662242026091813,
+          "compute_utilisation": 0.996298688829363,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.185062893296447,
+          "avg_latency_ms": 765.5008035537647,
+          "p50_latency_ms": 61.79766394043007,
+          "p95_latency_ms": 7527.4629988327,
+          "p99_latency_ms": 11574.32817766571,
+          "max_latency_ms": 12679.06072237396,
+          "min_latency_ms": 5.3870185871129905,
+          "starvation_count": 47,
+          "jains_fairness_index": 0.09306021508273642,
+          "compute_utilisation": 0.996298688829363,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.185062893296447,
+          "avg_latency_ms": 829.0822860358824,
+          "p50_latency_ms": 60.184801067352026,
+          "p95_latency_ms": 5326.444237474441,
+          "p99_latency_ms": 7063.070741044999,
+          "max_latency_ms": 7466.876825237274,
+          "min_latency_ms": 6.772599578857452,
+          "starvation_count": 78,
+          "jains_fairness_index": 0.1776919867256018,
+          "compute_utilisation": 0.996298688829363,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.318838851374128,
+          "avg_latency_ms": 2266.4577669581736,
+          "p50_latency_ms": 2222.018924453736,
+          "p95_latency_ms": 4234.551023765562,
+          "p99_latency_ms": 4336.113575246809,
+          "max_latency_ms": 4385.623980216978,
+          "min_latency_ms": 6.774663925170895,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7690103182674934,
+          "compute_utilisation": 1.0,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.318838851374128,
+          "avg_latency_ms": 826.619018291989,
+          "p50_latency_ms": 60.76478374481198,
+          "p95_latency_ms": 7822.970999275206,
+          "p99_latency_ms": 12594.528416313171,
+          "max_latency_ms": 13797.11075858307,
+          "min_latency_ms": 4.310493331908916,
+          "starvation_count": 49,
+          "jains_fairness_index": 0.09668620059792477,
+          "compute_utilisation": 1.0,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.318838851374128,
+          "avg_latency_ms": 895.7547906435909,
+          "p50_latency_ms": 61.276737600326484,
+          "p95_latency_ms": 5729.939159709928,
+          "p99_latency_ms": 7525.574514007569,
+          "max_latency_ms": 7897.024584472657,
+          "min_latency_ms": 4.310493331908916,
+          "starvation_count": 82,
+          "jains_fairness_index": 0.1818165485227884,
+          "compute_utilisation": 1.0,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.296447150600983,
+          "avg_latency_ms": 2085.4379311774996,
+          "p50_latency_ms": 1772.3064968566896,
+          "p95_latency_ms": 4399.3525932540915,
+          "p99_latency_ms": 4556.5137091598535,
+          "max_latency_ms": 4614.26594342232,
+          "min_latency_ms": 6.774663925170891,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.6960195782935931,
+          "compute_utilisation": 0.999498252964156,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.296447150600983,
+          "avg_latency_ms": 772.1786367588292,
+          "p50_latency_ms": 58.907757514953474,
+          "p95_latency_ms": 6758.778399408342,
+          "p99_latency_ms": 11446.75761400795,
+          "max_latency_ms": 12647.674667657853,
+          "min_latency_ms": 4.221113985061642,
+          "starvation_count": 55,
+          "jains_fairness_index": 0.10436073429940054,
+          "compute_utilisation": 0.999498252964156,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.296447150600983,
+          "avg_latency_ms": 825.6718601703298,
+          "p50_latency_ms": 61.14765664291255,
+          "p95_latency_ms": 5522.965836816789,
+          "p99_latency_ms": 7232.279416650772,
+          "max_latency_ms": 7576.857785261153,
+          "min_latency_ms": 4.011407737731787,
+          "starvation_count": 77,
+          "jains_fairness_index": 0.1703758559255268,
+          "compute_utilisation": 0.999498252964156,
+          "memory_peak_mb": 3101.33203125
+        }
+      },
+      {
+        "fifo": {
+          "throughput": 31.09789366935172,
+          "avg_latency_ms": 2731.3692629049992,
+          "p50_latency_ms": 2846.370048263551,
+          "p95_latency_ms": 4845.787023765565,
+          "p99_latency_ms": 5095.604376516343,
+          "max_latency_ms": 5137.753781486513,
+          "min_latency_ms": 4.003763198852539,
+          "starvation_count": 0,
+          "jains_fairness_index": 0.7991756556388662,
+          "compute_utilisation": 0.9920561284810114,
+          "memory_peak_mb": 3101.33203125
+        },
+        "sjf": {
+          "throughput": 31.09789366935172,
+          "avg_latency_ms": 993.5674275820077,
+          "p50_latency_ms": 57.09847418785108,
+          "p95_latency_ms": 8927.56735255432,
+          "p99_latency_ms": 13948.350076095583,
+          "max_latency_ms": 14881.519129745484,
+          "min_latency_ms": 4.003763198852539,
+          "starvation_count": 51,
+          "jains_fairness_index": 0.1059122455689996,
+          "compute_utilisation": 0.9920561284810114,
+          "memory_peak_mb": 3101.33203125
+        },
+        "hasp": {
+          "throughput": 31.09789366935172,
+          "avg_latency_ms": 1079.9752461508303,
+          "p50_latency_ms": 59.07640342330933,
+          "p95_latency_ms": 6632.321624650956,
+          "p99_latency_ms": 8424.58895728302,
+          "max_latency_ms": 8856.436374578478,
+          "min_latency_ms": 4.003763198852539,
+          "starvation_count": 89,
+          "jains_fairness_index": 0.19159718291872732,
+          "compute_utilisation": 0.9920561284810114,
+          "memory_peak_mb": 3101.33203125
+        }
+      }
+    ],
+    "summary": {
+      "fifo": {
+        "avg_latency_ms": {
+          "mean": 2204.2851954566854,
+          "stddev": 325.11756768545797,
+          "ci95_low": 2087.943368023827,
+          "ci95_high": 2320.6270228895437
+        },
+        "compute_utilisation": {
+          "mean": 0.9971783214962925,
+          "stddev": 0.0033884408341222035,
+          "ci95_low": 0.9959657835162739,
+          "ci95_high": 0.9983908594763111
+        },
+        "jains_fairness_index": {
+          "mean": 0.772736875292236,
+          "stddev": 0.04087932699511948,
+          "ci95_low": 0.7581083959987429,
+          "ci95_high": 0.7873653545857291
+        },
+        "max_latency_ms": {
+          "mean": 4251.276992718442,
+          "stddev": 690.1068369341019,
+          "ci95_low": 4004.325432689242,
+          "ci95_high": 4498.2285527476415
+        },
+        "memory_peak_mb": {
+          "mean": 3101.33203125,
+          "stddev": 0.0,
+          "ci95_low": 3101.33203125,
+          "ci95_high": 3101.33203125
+        },
+        "min_latency_ms": {
+          "mean": 6.405210494995117,
+          "stddev": 0.9580275755225514,
+          "ci95_low": 6.062384729962336,
+          "ci95_high": 6.748036260027899
+        },
+        "p50_latency_ms": {
+          "mean": 2257.113098562177,
+          "stddev": 388.14981145902846,
+          "ci95_low": 2118.2154723762187,
+          "ci95_high": 2396.0107247481355
+        },
+        "p95_latency_ms": {
+          "mean": 3999.7935485333755,
+          "stddev": 675.8665891944996,
+          "ci95_low": 3757.9377957129846,
+          "ci95_high": 4241.6493013537665
+        },
+        "p99_latency_ms": {
+          "mean": 4186.948585343679,
+          "stddev": 683.4644265057437,
+          "ci95_low": 3942.373981359321,
+          "ci95_high": 4431.523189328037
+        },
+        "starvation_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95_low": 0.0,
+          "ci95_high": 0.0
+        },
+        "throughput": {
+          "mean": 31.23749263222168,
+          "stddev": 0.11090535780254497,
+          "ci95_low": 31.197805659626813,
+          "ci95_high": 31.27717960481655
+        }
+      },
+      "sjf": {
+        "avg_latency_ms": {
+          "mean": 807.7888112138414,
+          "stddev": 115.70324618992545,
+          "ci95_low": 766.3849363095081,
+          "ci95_high": 849.1926861181747
+        },
+        "compute_utilisation": {
+          "mean": 0.9971783214962925,
+          "stddev": 0.0033884408341222035,
+          "ci95_low": 0.9959657835162739,
+          "ci95_high": 0.9983908594763111
+        },
+        "jains_fairness_index": {
+          "mean": 0.10102528309774784,
+          "stddev": 0.005603262698198418,
+          "ci95_low": 0.09902018129246656,
+          "ci95_high": 0.10303038490302913
+        },
+        "max_latency_ms": {
+          "mean": 12807.765697137387,
+          "stddev": 1449.864470346805,
+          "ci95_low": 12288.938359657694,
+          "ci95_high": 13326.59303461708
+        },
+        "memory_peak_mb": {
+          "mean": 3101.33203125,
+          "stddev": 0.0,
+          "ci95_low": 3101.33203125,
+          "ci95_high": 3101.33203125
+        },
+        "min_latency_ms": {
+          "mean": 4.447959833971837,
+          "stddev": 0.5324377839362686,
+          "ci95_low": 4.257429419948266,
+          "ci95_high": 4.638490247995409
+        },
+        "p50_latency_ms": {
+          "mean": 58.60775911776226,
+          "stddev": 2.3178441568854087,
+          "ci95_low": 57.778329238483906,
+          "ci95_high": 59.43718899704061
+        },
+        "p95_latency_ms": {
+          "mean": 7498.214115944607,
+          "stddev": 1018.6396893396177,
+          "ci95_low": 7133.698584541316,
+          "ci95_high": 7862.729647347898
+        },
+        "p99_latency_ms": {
+          "mean": 11816.45360860138,
+          "stddev": 1373.5760936664396,
+          "ci95_low": 11324.925716113434,
+          "ci95_high": 12307.981501089325
+        },
+        "starvation_count": {
+          "mean": 48.266666666666666,
+          "stddev": 2.9934795038934014,
+          "ci95_low": 47.19546378352163,
+          "ci95_high": 49.3378695498117
+        },
+        "throughput": {
+          "mean": 31.23749263222168,
+          "stddev": 0.11090535780254497,
+          "ci95_low": 31.197805659626813,
+          "ci95_high": 31.27717960481655
+        }
+      },
+      "hasp": {
+        "avg_latency_ms": {
+          "mean": 871.4788702622459,
+          "stddev": 127.8455502335814,
+          "ci95_low": 825.7299276590455,
+          "ci95_high": 917.2278128654463
+        },
+        "compute_utilisation": {
+          "mean": 0.9971783214962925,
+          "stddev": 0.0033884408341222035,
+          "ci95_low": 0.9959657835162739,
+          "ci95_high": 0.9983908594763111
+        },
+        "jains_fairness_index": {
+          "mean": 0.18055306048102499,
+          "stddev": 0.0066057767688673654,
+          "ci95_low": 0.17818921362287218,
+          "ci95_high": 0.1829169073391778
+        },
+        "max_latency_ms": {
+          "mean": 7657.466634086736,
+          "stddev": 866.2684446569887,
+          "ci95_low": 7347.476452330951,
+          "ci95_high": 7967.456815842521
+        },
+        "memory_peak_mb": {
+          "mean": 3101.33203125,
+          "stddev": 0.0,
+          "ci95_low": 3101.33203125,
+          "ci95_high": 3101.33203125
+        },
+        "min_latency_ms": {
+          "mean": 4.613334778785824,
+          "stddev": 0.7550226393158337,
+          "ci95_low": 4.343153397211983,
+          "ci95_high": 4.883516160359665
+        },
+        "p50_latency_ms": {
+          "mean": 60.405935505421965,
+          "stddev": 2.0262839778105968,
+          "ci95_low": 59.68083909628397,
+          "ci95_high": 61.13103191455996
+        },
+        "p95_latency_ms": {
+          "mean": 5573.314016588084,
+          "stddev": 718.2801039231465,
+          "ci95_low": 5316.280782444521,
+          "ci95_high": 5830.347250731647
+        },
+        "p99_latency_ms": {
+          "mean": 7293.947417232831,
+          "stddev": 867.3491373054854,
+          "ci95_low": 6983.570514579389,
+          "ci95_high": 7604.324319886273
+        },
+        "starvation_count": {
+          "mean": 82.16666666666667,
+          "stddev": 4.713029140389535,
+          "ci95_low": 80.4801308487446,
+          "ci95_high": 83.85320248458875
+        },
+        "throughput": {
+          "mean": 31.23749263222168,
+          "stddev": 0.11090535780254497,
+          "ci95_low": 31.197805659626813,
+          "ci95_high": 31.27717960481655
+        }
+      }
+    }
+  }
+}

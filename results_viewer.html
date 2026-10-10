@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GLIDE | Results Desk</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #182622;
+      --muted: #69756e;
+      --paper: #f5f3ed;
+      --surface: #fffefa;
+      --line: #dfdfd5;
+      --green: #286c50;
+      --green-soft: #e5efe8;
+      --orange: #cf633e;
+      --orange-soft: #f8e9e2;
+      --blue: #456f92;
+      --blue-soft: #e9eff4;
+      --shadow: 0 14px 38px rgba(29, 43, 35, .07);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background-color: var(--paper);
+      background-image: radial-gradient(#d4d6ca 0.65px, transparent 0.65px);
+      background-size: 16px 16px;
+      font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    button, select, input { font: inherit; }
+    button, select { color: var(--ink); }
+    button { cursor: pointer; }
+    .page { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+    .topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 20px 0 17px;
+      border-bottom: 1px solid rgba(24, 38, 34, .16);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+    .brand-mark { display: grid; width: 29px; height: 29px; place-items: center; border-radius: 7px; color: white; background: var(--green); font-family: Georgia, serif; font-size: 17px; }
+    .topline-note { color: var(--muted); font-size: 12px; }
+    header { padding: 35px 0 27px; }
+    .eyebrow { margin: 0 0 8px; color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { max-width: 680px; margin-bottom: 10px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(32px, 5vw, 52px); font-weight: 500; line-height: 1.04; }
+    .intro { max-width: 760px; margin: 0; color: #52605a; font-size: 15px; }
+
+    .section { margin: 0 0 34px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
+    .section-head h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 24px; font-weight: 500; }
+    .section-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .surface { border: 1px solid var(--line); border-radius: 7px; background: var(--surface); box-shadow: var(--shadow); }
+    .overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: var(--line); box-shadow: var(--shadow); }
+    .overview-item { min-height: 112px; padding: 17px 19px; background: var(--surface); }
+    .overview-item strong { display: block; margin-bottom: 4px; color: var(--green); font-family: Georgia, serif; font-size: 30px; font-weight: 500; line-height: 1.1; }
+    .overview-item span { color: var(--muted); font-size: 12px; }
+
+    .scenario-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; padding: 13px 15px; }
+    .scenario-bar label { color: var(--muted); font-size: 12px; font-weight: 700; }
+    select { min-width: 230px; max-width: 100%; padding: 8px 34px 8px 10px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+    .scenario-context { margin-left: auto; color: var(--muted); font-size: 12px; }
+    .callout { display: grid; grid-template-columns: 5px 1fr; gap: 12px; margin: 0 0 13px; padding: 13px 15px; border: 1px solid #ecd6cb; border-radius: 6px; background: #fff8f4; }
+    .callout::before { content: ""; border-radius: 5px; background: var(--orange); }
+    .callout p { margin: 0; color: #5e4d44; font-size: 13px; }
+    .callout strong { color: var(--ink); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th { padding: 11px 13px; color: var(--muted); background: #f7f7f1; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+    td { padding: 12px 13px; border-top: 1px solid #e9e9e1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    tbody tr:hover { background: #f8faf6; }
+    .scheduler { font-weight: 800; }
+    .best { color: var(--green); }
+    .bar-cell { min-width: 140px; }
+    .meter { height: 6px; overflow: hidden; border-radius: 4px; background: #e8ebe4; }
+    .meter span { display: block; height: 100%; border-radius: inherit; background: var(--green); }
+    .small-note { padding: 11px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+
+    .benchmark-layout { display: grid; grid-template-columns: 1fr 285px; gap: 13px; align-items: start; }
+    .bench-table td:first-child { min-width: 205px; font-weight: 700; }
+    .pass-track { width: 85px; height: 7px; display: inline-block; margin-right: 7px; overflow: hidden; border-radius: 5px; vertical-align: middle; background: #e8ebe4; }
+    .pass-track span { display: block; width: 100%; height: 100%; background: var(--green); }
+    .pass-label { color: var(--green); font-size: 11px; font-weight: 800; }
+    .side-note { padding: 17px; }
+    .side-note h3 { margin: 0 0 8px; font-family: Georgia, serif; font-size: 18px; font-weight: 500; }
+    .side-note p { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+    .raw-link, .action-button { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; gap: 7px; padding: 7px 11px; border: 1px solid #bfd0c3; border-radius: 5px; color: var(--green); background: #f7fbf7; font-size: 12px; font-weight: 800; text-decoration: none; }
+    .raw-link:hover, .action-button:hover { background: var(--green-soft); }
+    .action-button:disabled { cursor: default; opacity: .45; }
+    .file-input { display: none; }
+    .detail-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    .detail-tools input[type="search"] { min-width: min(270px, 100%); padding: 8px 10px; border: 1px solid var(--line); border-radius: 5px; }
+    .detail-status { margin-left: auto; color: var(--muted); font-size: 11px; }
+    .detail-table td:first-child { min-width: 190px; }
+    .status { display: inline-block; padding: 3px 7px; border-radius: 4px; color: #256446; background: var(--green-soft); font-size: 10px; font-weight: 800; }
+    .empty-state { padding: 22px; color: var(--muted); text-align: center; }
+    .explain-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: var(--line); box-shadow: var(--shadow); }
+    .explain-item { min-height: 125px; padding: 15px 16px; background: var(--surface); }
+    .explain-item strong { display: block; margin-bottom: 5px; font-size: 13px; }
+    .explain-item p { margin: 0; color: var(--muted); font-size: 12px; }
+    footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 38px; padding: 18px 0 25px; border-top: 1px solid rgba(24, 38, 34, .16); color: var(--muted); font-size: 11px; }
+    @media (max-width: 780px) {
+      .page { width: min(100% - 26px, 600px); }
+      .topline { align-items: flex-start; }
+      .topline-note { max-width: 160px; text-align: right; }
+      header { padding-top: 27px; }
+      .overview { grid-template-columns: repeat(2, 1fr); }
+      .overview-item { min-height: 95px; padding: 14px; }
+      .overview-item strong { font-size: 26px; }
+      .scenario-bar { align-items: flex-start; }
+      .scenario-context { width: 100%; margin-left: 0; }
+      .benchmark-layout { grid-template-columns: 1fr; }
+      .explain-grid { grid-template-columns: 1fr; }
+      .explain-item { min-height: 0; }
+      .detail-status { width: 100%; margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topline">
+      <div class="brand"><span class="brand-mark">G</span><span>GLIDE / RESULTS DESK</span></div>
+      <div class="topline-note">Saved results from this worktree</div>
+    </div>
+
+    <header>
+      <p class="eyebrow">Your test results, translated</p>
+      <h1>What happened when the GPUs ran the models?</h1>
+      <p class="intro">This page turns the saved GLIDE output into a readable overview. The benchmark checks whether each GPU/model pair ran and how long its emulated compute took. The experiments compare three ways of ordering inference requests.</p>
+    </header>
+
+    <main>
+      <section class="section" aria-labelledby="overview-title">
+        <div class="section-head"><div><h2 id="overview-title">At a glance</h2><p>Quick orientation before the detailed comparisons.</p></div></div>
+        <div class="overview">
+          <div class="overview-item"><strong>216</strong><span>GPU and model combinations in the benchmark report</span></div>
+          <div class="overview-item"><strong>216 / 216</strong><span>Reported as PASS in the saved benchmark</span></div>
+          <div class="overview-item"><strong>30</strong><span>Paired scheduler trials, seeds 42–71</span></div>
+          <div class="overview-item"><strong>40/s</strong><span>Poisson arrival rate in the validated workload</span></div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="experiment-title">
+        <div class="section-head"><div><h2 id="experiment-title">Scheduler validation</h2><p>Corrected, paired comparison using the same arrivals for every policy.</p></div></div>
+        <div class="surface scenario-bar"><strong>Tesla M40 · Poisson 40 requests/s · 15 seconds · batch sizes 1, 8, 16, 32</strong><span class="scenario-context">6 models · HASP aging: 5 seconds</span></div>
+        <div class="callout" role="note"><p><strong>Measured trade-off:</strong> Across 30 seeds, HASP lowered mean P95 latency versus SJF by 1,924.9 ms (paired 95% CI: 1,757.3–2,092.5 ms lower) and raised the Jain latency index by 0.080. Mean latency increased by 63.7 ms (95% CI: 58.9–68.5 ms higher); throughput was unchanged. FIFO had lower P95 than HASP in this run.</p></div>
+        <div class="surface">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Scheduler</th><th>Mean latency (ms)</th><th>P95 latency (ms)</th><th>Throughput (req/s)</th><th>Jain latency index</th><th>Relative outliers</th></tr></thead>
+              <tbody id="schedulerRows"></tbody>
+            </table>
+          </div>
+          <div class="small-note">Cells show mean ± standard deviation across trials. The Jain index is computed on raw latency: higher means more equal latency values, not necessarily faster service. “Relative outliers” counts requests over 3× that trial’s average latency; it is not a count of requests that waited forever.</div>
+        </div>
+        <p class="small-note">Models: ResNet-18, ResNet-50, VGG-16, MobileNet-v2, DenseNet-121, and AlexNet. This is a profile-driven emulator test, not a physical-GPU timing study. The earlier scheduler aggregates were produced before the runner let policies choose from the full ready queue, so they are not used here.</p>
+        <p><a class="raw-link" href="./experiment_results/hasp_validation_poisson40/report.json" target="_blank" rel="noopener">Open the full 30-trial report ↗</a></p>
+      </section>
+
+      <section class="section" aria-labelledby="gpu-title">
+        <div class="section-head"><div><h2 id="gpu-title">GPU benchmark</h2><p>Summarized from the saved 216-row GPU/model report.</p></div></div>
+        <div class="benchmark-layout">
+          <div class="surface table-wrap">
+            <table class="bench-table">
+              <thead><tr><th>GPU</th><th>Completed</th><th>Average compute</th><th>Fastest model</th><th>Slowest model</th></tr></thead>
+              <tbody id="gpuRows"></tbody>
+            </table>
+          </div>
+          <aside class="surface side-note">
+            <h3>What does PASS mean?</h3>
+            <p>For this emulated benchmark, a row passes when both compute time and estimated memory use were recorded. These are emulator results, not proof of a physical GPU run.</p>
+            <a class="raw-link" href="./comprehensive_test_results.txt" target="_blank" rel="noopener">Open original report ↗</a>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="detail-title">
+        <div class="section-head"><div><h2 id="detail-title">Every model result</h2><p>Load the original text report to browse or search all 216 rows.</p></div></div>
+        <div class="surface">
+          <div class="detail-tools">
+            <label class="action-button" for="reportFile">＋ Load detailed rows</label>
+            <input class="file-input" id="reportFile" type="file" accept=".txt,text/plain">
+            <input id="detailSearch" type="search" placeholder="Filter by GPU, model, or status" aria-label="Filter benchmark results" disabled>
+            <button id="exportCsv" class="action-button" type="button" disabled>↓ Export CSV</button>
+            <span id="detailStatus" class="detail-status">Choose comprehensive_test_results.txt from this folder to load all rows.</span>
+          </div>
+          <div class="table-wrap">
+            <table class="detail-table">
+              <thead><tr><th>GPU</th><th>Model</th><th>Compute time</th><th>Estimated memory</th><th>Status</th></tr></thead>
+              <tbody id="detailRows"><tr><td colspan="5" class="empty-state">The saved report is available locally; load it above to view and filter individual rows here.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="glossary-title">
+        <div class="section-head"><div><h2 id="glossary-title">Reading the numbers</h2><p>A quick guide to the terms used in the files.</p></div></div>
+        <div class="explain-grid">
+          <div class="explain-item"><strong>Average latency</strong><p>Average time from request arrival to completion, including service time. Values are in milliseconds.</p></div>
+          <div class="explain-item"><strong>P95 latency</strong><p>95% of requests completed within this time; the slowest 5% took longer. It highlights tail delays.</p></div>
+          <div class="explain-item"><strong>Requests / sec</strong><p>Throughput: the number of requests completed per second in the experiment.</p></div>
+          <div class="explain-item"><strong>Jain latency index</strong><p>This project computes Jain's index on raw latencies. Closer to 1 means more equal latency values, not necessarily shorter latency.</p></div>
+          <div class="explain-item"><strong>FIFO, SJF, HASP</strong><p>FIFO serves requests in arrival order. SJF prioritizes shorter jobs. HASP is the project's custom scheduler.</p></div>
+          <div class="explain-item"><strong>Compute and memory</strong><p>Benchmark compute is emulated processing time. Memory is an estimated model/batch footprint, not a measurement of your machine's live GPU memory.</p></div>
+        </div>
+      </section>
+    </main>
+
+    <footer><span>Data source: saved files in the improving-dashboard-design worktree</span><span>Local page · no network connection required</span></footer>
+  </div>
+
+  <script>
+    const gpuResults = [
+      { gpu: 'NVIDIA A100-SXM4-40GB', count: 36, passed: 36, avgComputeMs: 17.84, fastest: { model: 'alexnet', compute: 1.70 }, slowest: { model: 'densenet201', compute: 49.21 } },
+      { gpu: 'Quadro RTX 6000', count: 36, passed: 36, avgComputeMs: 39.24, fastest: { model: 'alexnet', compute: 3.35 }, slowest: { model: 'resnext101_32x8d', compute: 132.85 } },
+      { gpu: 'Tesla K80', count: 36, passed: 36, avgComputeMs: 218.22, fastest: { model: 'shufflenet_v2_x0_5', compute: 15.21 }, slowest: { model: 'resnext101_32x8d', compute: 943.17 } },
+      { gpu: 'Tesla M40', count: 36, passed: 36, avgComputeMs: 104.00, fastest: { model: 'alexnet', compute: 9.02 }, slowest: { model: 'resnext101_32x8d', compute: 353.50 } },
+      { gpu: 'Tesla P100-PCIE-16GB', count: 36, passed: 36, avgComputeMs: 57.96, fastest: { model: 'alexnet', compute: 5.08 }, slowest: { model: 'resnext101_32x8d', compute: 241.58 } },
+      { gpu: 'Tesla V100-PCIE-32GB', count: 36, passed: 36, avgComputeMs: 35.85, fastest: { model: 'alexnet', compute: 3.26 }, slowest: { model: 'resnext101_32x8d', compute: 131.17 } }
+    ];
+
+    const number = (value, digits = 2) => Number(value).toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    function renderSchedulerRows() {
+      const schedulerResults = [
+        { name: 'FIFO', avg: 2204.285, avgSd: 325.118, p95: 3999.794, p95Sd: 675.867, throughput: 31.237, throughputSd: 0.111, fairness: 0.772737, fairnessSd: 0.040879, outliers: 0.0, outliersSd: 0.0 },
+        { name: 'SJF', avg: 807.789, avgSd: 115.703, p95: 7498.214, p95Sd: 1018.640, throughput: 31.237, throughputSd: 0.111, fairness: 0.101025, fairnessSd: 0.005603, outliers: 48.267, outliersSd: 2.993 },
+        { name: 'HASP', avg: 871.479, avgSd: 127.846, p95: 5573.314, p95Sd: 718.280, throughput: 31.237, throughputSd: 0.111, fairness: 0.180553, fairnessSd: 0.006606, outliers: 82.167, outliersSd: 4.713 }
+      ];
+      document.querySelector('#schedulerRows').innerHTML = schedulerResults.map((row) => `<tr><td class="scheduler">${row.name}</td><td>${number(row.avg)} ± ${number(row.avgSd)} ms</td><td>${number(row.p95)} ± ${number(row.p95Sd)} ms</td><td>${number(row.throughput, 2)} ± ${number(row.throughputSd, 2)}</td><td>${number(row.fairness, 3)} ± ${number(row.fairnessSd, 3)}</td><td>${number(row.outliers, 1)} ± ${number(row.outliersSd, 1)}</td></tr>`).join('');
+    }
+
+    function renderGpuRows() {
+      document.querySelector('#gpuRows').innerHTML = gpuResults.map((item) => `<tr><td>${item.gpu}</td><td><span class="pass-track"><span></span></span><span class="pass-label">${item.passed}/${item.count} PASS</span></td><td>${number(item.avgComputeMs)} ms</td><td>${item.fastest.model}<br><span class="small-note">${number(item.fastest.compute)} ms</span></td><td>${item.slowest.model}<br><span class="small-note">${number(item.slowest.compute)} ms</span></td></tr>`).join('');
+    }
+
+    let benchmarkRows = [];
+    const detailBody = document.querySelector('#detailRows');
+    const searchInput = document.querySelector('#detailSearch');
+    const reportFile = document.querySelector('#reportFile');
+    const detailStatus = document.querySelector('#detailStatus');
+
+    function renderDetails() {
+      const query = searchInput.value.trim().toLowerCase();
+      const filtered = benchmarkRows.filter((row) => `${row.gpu} ${row.model} ${row.status}`.toLowerCase().includes(query));
+      detailStatus.textContent = `${filtered.length} of ${benchmarkRows.length} rows shown`;
+      document.querySelector('#exportCsv').disabled = benchmarkRows.length === 0;
+      if (!filtered.length) {
+        detailBody.innerHTML = '<tr><td colspan="5" class="empty-state">No matching benchmark rows.</td></tr>';
+        return;
+      }
+      detailBody.innerHTML = filtered.slice(0, 216).map((row) => `<tr><td>${row.gpu}</td><td>${row.model}</td><td>${number(row.compute)} ms</td><td>${number(row.memory)} MB</td><td><span class="status">${row.status}</span></td></tr>`).join('');
+    }
+
+    reportFile.addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const contents = await file.text();
+      benchmarkRows = contents.split(/\r?\n/).flatMap((line) => {
+        const parts = line.split('|').map((part) => part.trim());
+        if (parts.length < 5 || !parts[0] || parts[0] === 'GPU' || !/^\d/.test(parts[2])) return [];
+        const compute = Number.parseFloat(parts[2]);
+        const memory = Number.parseFloat(parts[3]);
+        return Number.isFinite(compute) && Number.isFinite(memory) ? [{ gpu: parts[0], model: parts[1], compute, memory, status: parts[4] }] : [];
+      });
+      searchInput.disabled = false;
+      renderDetails();
+    });
+
+    searchInput.addEventListener('input', renderDetails);
+    document.querySelector('#exportCsv').addEventListener('click', () => {
+      const header = 'GPU,Model,Compute (ms),Estimated memory (MB),Status';
+      const lines = benchmarkRows.map((row) => [row.gpu, row.model, row.compute, row.memory, row.status].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','));
+      const url = URL.createObjectURL(new Blob([[header, ...lines].join('\n')], { type: 'text/csv' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'glide-benchmark-results.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+
+    renderSchedulerRows();
+    renderGpuRows();
+  </script>
+</body>
+</html>
