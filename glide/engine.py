@@ -187,6 +187,15 @@ class InferenceEngine:
         self.current_memory_mb = 0.0
         self.is_running = False
         self.queue_history: List[Dict[str, Any]] = []
+        self._virtual_time: Optional[float] = None
+
+    def enable_virtual_time(self, start_time: Optional[float] = None) -> None:
+        """Use profiled service durations instead of wall-clock sleeping."""
+        arrivals = [request.arrival_time for request in self.request_queue]
+        self._virtual_time = start_time if start_time is not None else (min(arrivals) if arrivals else time.time())
+
+    def _now(self) -> float:
+        return self._virtual_time if self._virtual_time is not None else time.time()
 
     def _load_selected_gpu(self) -> str:
         if not os.path.exists(SELECTED_GPU_PATH):
@@ -233,9 +242,12 @@ class InferenceEngine:
         if not self.request_queue:
             return []
 
-        current_time = time.time()
+        current_time = self._now()
+        available = [request for request in self.request_queue if request.arrival_time <= current_time]
+        if not available:
+            return []
         self.queue_history.append({'timestamp': current_time, 'queue_length': len(self.request_queue)})
-        selected = self.batcher.select_batch(self.request_queue, current_time, flush)
+        selected = self.batcher.select_batch(available, current_time, flush)
         if not selected:
             return []
         ordered: List[InferenceRequest] = []
@@ -248,16 +260,22 @@ class InferenceEngine:
             ordered.append(chosen)
         if not ordered:
             return []
-        start_time = time.time()
+        start_time = self._now()
         compute_times = [float(request.emulated_compute_ms or request.batch_size * 2.0)
                          for request in ordered]
         for request, compute_time_ms in zip(ordered, compute_times):
             request.status = 'processing'
             request.start_time = start_time
             request.emulated_compute_ms = compute_time_ms
-        if not self._skip_sleep:
+        service_duration_s = max(compute_times) / 1000.0
+        if self._virtual_time is not None:
+            end_time = start_time + service_duration_s
+            self._virtual_time = end_time
+        elif not self._skip_sleep:
             time.sleep(max(compute_times) / 1000.0)
-        end_time = time.time()
+            end_time = time.time()
+        else:
+            end_time = time.time()
         for request in ordered:
             if request.memory_mb is not None:
                 self.current_memory_mb = request.memory_mb
@@ -278,7 +296,9 @@ class InferenceEngine:
         try:
             while self.request_queue:
                 if not self.process_batch(flush=True):
-                    break
+                    if self._virtual_time is None:
+                        break
+                    self._virtual_time = min(request.arrival_time for request in self.request_queue)
         finally:
             self.is_running = False
         return self.completed_requests
@@ -317,6 +337,7 @@ class InferenceEngine:
         self.current_memory_mb = 0.0
         self.is_running = False
         self.queue_history.clear()
+        self._virtual_time = None
 
     def write_to_dashboard(self) -> None:
         from .metrics import compute_metrics
