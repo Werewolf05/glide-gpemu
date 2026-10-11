@@ -1381,6 +1381,14 @@ DASHBOARD_HTML = """
             </select>
           </div>
           <div>
+            <div class="input-label">Scheduler</div>
+            <select id="schedulerSelector">
+              <option value="fifo">FIFO</option>
+              <option value="sjf">SJF</option>
+              <option value="hasp">HASP</option>
+            </select>
+          </div>
+          <div>
             <div class="input-label">Current Mode</div>
             <div class="mode-badge" id="modeBadge">SEQUENTIAL BATCH EXECUTION</div>
           </div>
@@ -1390,7 +1398,7 @@ DASHBOARD_HTML = """
           </div>
           <button class="btn" id="startRunBtn">Start New Run</button>
         </div>
-        <div class="hint">Select model and GPU for real GPEmu-backed metrics. Scheduler: <strong id="schedulerActive">FIFO</strong>.</div>
+        <div class="hint">Select a model, GPU profile, and scheduler to run that exact combination. Current scheduler: <strong id="schedulerActive">FIFO</strong>.</div>
       </div>
 
       <div class="model-info">
@@ -2132,6 +2140,11 @@ DASHBOARD_HTML = """
         if (gpuSelector.value !== selectedGpu) {
           gpuSelector.value = selectedGpu;
         }
+        const schedulerSelector = document.getElementById('schedulerSelector');
+        const selectedScheduler = metrics.scheduler_name || 'fifo';
+        if (schedulerSelector && schedulerSelector.value !== selectedScheduler) {
+          schedulerSelector.value = selectedScheduler;
+        }
 
         setStatus(metrics.status, batches.length > 0);
         renderTopStats(metrics);
@@ -2154,6 +2167,7 @@ DASHBOARD_HTML = """
         resetDashboardState();
         const payload = await setModelSelection(evt.target.value);
         applyLookupUtilization(payload);
+        await startNewRun();
         console.log('[GLIDE model change response]', payload);
         await tick();
       } catch (_err) {
@@ -2165,8 +2179,23 @@ DASHBOARD_HTML = """
         resetDashboardState();
         const payload = await setGpuSelection(evt.target.value);
         applyLookupUtilization(payload);
+        await startNewRun();
         console.log('[GLIDE gpu change response]', payload);
         await tick();
+      } catch (_err) {
+      }
+    });
+
+    document.getElementById('schedulerSelector').addEventListener('change', async (evt) => {
+      try {
+        const response = await fetch('/api/set_scheduler', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scheduler: evt.target.value })
+        });
+        const payload = await response.json();
+        document.getElementById('schedulerActive').textContent = String(payload.scheduler_name || evt.target.value).toUpperCase();
+        await startNewRun();
       } catch (_err) {
       }
     });
@@ -2287,9 +2316,10 @@ function render(data){lastMetrics=data;const gpu=num(data.gpu_util),compute=num(
 function updateLiveIndicators(data){const profile=data.profile_stats||{},gpuInfo=data.gpu_info||{},memoryGb=num(data.vram_used_gb,num(profile.memory_peak_gb)),memoryMb=memoryGb*1024,totalMemoryMb=num(gpuInfo.memory_gb)*1024,memoryPct=totalMemoryMb?Math.min(100,memoryMb/totalMemoryMb*100):0,bandwidth=num(data.bandwidth_gbps,num(profile.estimated_bandwidth_gbps));gauge('memoryGauge','memoryGaugeText',memoryPct,'memory');$('vramBar').style.width=`${memoryPct}%`;$('vramText').textContent=`${memoryMb.toFixed(1)} MB`;$('bandwidthBar').style.width=`${Math.min(100,bandwidth/1e3*100)}%`;$('bandwidthText').textContent=bandwidth?`${bandwidth.toFixed(1)} GB/s`:'--';const active=['starting','running','stopping'].includes(data.status);$('startRun').disabled=active;$('stopRun').disabled=data.status!=='running';$('gpuSelector').disabled=active;$('modelSelector').disabled=active;$('schedulerSelector').disabled=active}
 async function refresh(){try{const r=await fetch('/api/metrics',{cache:'no-store'});const data=await r.json();render(data);updateLiveIndicators(data)}catch(e){$('statusText').textContent='OFFLINE'}}
 async function post(path,payload){await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});refresh()}
-if($('gpuSelector'))$('gpuSelector').addEventListener('change',async e=>{await post('/api/set_gpu',{gpu:e.target.value});loadModelTimings(e.target.value);replayEngine()});
-if($('modelSelector'))$('modelSelector').addEventListener('change',async e=>{await post('/api/set_model',{model:e.target.value});replayEngine()});
-if($('schedulerSelector'))$('schedulerSelector').addEventListener('change',async e=>{await post('/api/set_scheduler',{scheduler:e.target.value});refresh()});
+async function runSelectedCombination(){await fetch('/api/start_run',{method:'POST'});await refresh();}
+if($('gpuSelector'))$('gpuSelector').addEventListener('change',async e=>{await post('/api/set_gpu',{gpu:e.target.value});loadModelTimings(e.target.value);await runSelectedCombination();replayEngine()});
+if($('modelSelector'))$('modelSelector').addEventListener('change',async e=>{await post('/api/set_model',{model:e.target.value});await runSelectedCombination();replayEngine()});
+if($('schedulerSelector'))$('schedulerSelector').addEventListener('change',async e=>{await post('/api/set_scheduler',{scheduler:e.target.value});await runSelectedCombination()});
 if($('startRun'))$('startRun').addEventListener('click',async()=>{await post('/api/start_run',{});refresh()});
 if($('stopRun'))$('stopRun').addEventListener('click',async()=>{await post('/api/stop_run',{});refresh()});
 if($('runExperiments'))$('runExperiments').addEventListener('click',async()=>{await post('/api/run_experiments',{});loadExperiments()});
