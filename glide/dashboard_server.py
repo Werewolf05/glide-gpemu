@@ -21,11 +21,13 @@ METRICS_PATH = os.path.join(GLIDE_DIR, 'glide_metrics.json')
 SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
 SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
 SELECTED_SCHEDULER_PATH = os.path.join(GLIDE_DIR, 'selected_scheduler.json')
+SELECTED_BATCH_PATH = os.path.join(GLIDE_DIR, 'selected_batch.json')
 PROFILED_DATA_ROOT = os.path.join(os.path.dirname(GLIDE_DIR), 'profiled_data')
 FALLBACK_PROFILED_DATA_ROOT = os.path.join(os.path.dirname(GLIDE_DIR), 'profiled_data')
 DEFAULT_MODEL = 'resnet18'
 DEFAULT_GPU = 'Tesla_M40'
 DEFAULT_SCHEDULER = 'fifo'
+DEFAULT_BATCH_SIZE = 32
 SCHEDULER_VALIDATION_REPORT = os.path.join(
   PROJECT_ROOT, 'experiment_results', 'hasp_validation_poisson40', 'report.json',
 )
@@ -47,7 +49,7 @@ def _ensure_write_dir() -> None:
 
   Updates module-level path constants to point at the fallback when necessary.
   """
-  global GLIDE_DIR, METRICS_PATH, SELECTED_MODEL_PATH, SELECTED_GPU_PATH, SELECTED_SCHEDULER_PATH, PROFILED_DATA_ROOT
+  global GLIDE_DIR, METRICS_PATH, SELECTED_MODEL_PATH, SELECTED_GPU_PATH, SELECTED_SCHEDULER_PATH, SELECTED_BATCH_PATH, PROFILED_DATA_ROOT
   # Try to ensure the configured glide directory exists and is writable.
   try:
     os.makedirs(GLIDE_DIR, exist_ok=True)
@@ -60,6 +62,7 @@ def _ensure_write_dir() -> None:
     SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
     SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
     SELECTED_SCHEDULER_PATH = os.path.join(GLIDE_DIR, 'selected_scheduler.json')
+    SELECTED_BATCH_PATH = os.path.join(GLIDE_DIR, 'selected_batch.json')
     PROFILED_DATA_ROOT = FALLBACK_PROFILED_DATA_ROOT
 
   # If any of the selected files exist but are not writable by this user,
@@ -73,6 +76,7 @@ def _ensure_write_dir() -> None:
       SELECTED_MODEL_PATH = os.path.join(GLIDE_DIR, 'selected_model.json')
       SELECTED_GPU_PATH = os.path.join(GLIDE_DIR, 'selected_gpu.json')
       SELECTED_SCHEDULER_PATH = os.path.join(GLIDE_DIR, 'selected_scheduler.json')
+      SELECTED_BATCH_PATH = os.path.join(GLIDE_DIR, 'selected_batch.json')
       PROFILED_DATA_ROOT = FALLBACK_PROFILED_DATA_ROOT
       break
 
@@ -2494,6 +2498,30 @@ loadScheduler=async function(){
   const target=$('haspDecision');if(target)target.textContent='HASP combines profiled compute affinity, memory fit, and aging. Evaluate it using tail latency and maximum wait, with average latency reported as a trade-off.';
 };
 function updateResearchCopy(){document.querySelectorAll('#page-scheduler p,#page-experiments p').forEach(node=>{node.textContent=node.textContent.replace('Starvation-free, fair, competitive throughput','Tail-latency and wait-time trade-off under evaluation').replace('0 starvation events across all scenarios.','Evaluate P95/P99 latency and maximum wait on identical traces.').replace('HASP fairness index','HASP slowdown fairness').replace('while eliminating starvation.','while reporting wait outliers separately from starvation claims.')})}
+function installBatchSelector(){
+  if($('batchSelector'))return;
+  const host=$('startRun')?.parentElement||document.querySelector('.selectors');
+  if(!host)return;
+  const label=document.createElement('label');
+  label.textContent='Batch size';
+  const select=document.createElement('select');
+  select.id='batchSelector';
+  [1,8,32].forEach(size=>{const option=new Option(String(size),String(size));select.add(option)});
+  select.value=String(lastMetrics?.batch_size||32);
+  select.addEventListener('change',async event=>{await fetch('/api/set_batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({batch_size:event.target.value})});await runSelectedCombination()});
+  label.appendChild(select);host.prepend(label);
+}
+installBatchSelector();
+function showPublicationMatrixPlan(){
+  const page=document.getElementById('page-experiments');
+  if(!page||document.getElementById('publicationMatrixPlan'))return;
+  const card=document.createElement('div');
+  card.id='publicationMatrixPlan';
+  card.className='review-card';
+  card.innerHTML='<h3>Publication evaluation matrix</h3><p>Offline paired evaluation: 6 GPU profiles × 15 models × 3 batch sizes × 3 arrival patterns × 3 load levels, with FIFO, SJF, and HASP on the same traces. The dashboard runs one selected combination at a time; the matrix saves per-trial traces and reports to avoid overloading the live engine.</p>';
+  page.insertBefore(card,page.firstElementChild?.nextElementSibling||page.firstChild);
+}
+showPublicationMatrixPlan();
 addAuditStyles();addUnderstanding();updateResearchCopy();loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();
 </script></body></html>
 """
@@ -2586,6 +2614,37 @@ def _save_selected_scheduler(scheduler_name: Any) -> str:
   return scheduler
 
 
+def _load_selected_batch() -> int:
+  try:
+    with open(SELECTED_BATCH_PATH, 'r', encoding='utf-8') as batch_file:
+      data = json.load(batch_file)
+      value = int(data.get('batch_size')) if isinstance(data, dict) else DEFAULT_BATCH_SIZE
+      return value if value in (1, 8, 32) else DEFAULT_BATCH_SIZE
+  except (OSError, TypeError, ValueError, json.JSONDecodeError):
+    return DEFAULT_BATCH_SIZE
+
+
+def _save_selected_batch(batch_size: Any) -> int:
+  try:
+    value = int(batch_size)
+  except (TypeError, ValueError):
+    value = DEFAULT_BATCH_SIZE
+  if value not in (1, 8, 32):
+    value = DEFAULT_BATCH_SIZE
+  _ensure_write_dir()
+  with open(SELECTED_BATCH_PATH, 'a+', encoding='utf-8') as batch_file:
+    fcntl.flock(batch_file.fileno(), fcntl.LOCK_EX)
+    try:
+      batch_file.seek(0)
+      batch_file.truncate()
+      json.dump({'batch_size': value, 'updated_at': time.time()}, batch_file)
+      batch_file.flush()
+      os.fsync(batch_file.fileno())
+    finally:
+      fcntl.flock(batch_file.fileno(), fcntl.LOCK_UN)
+  return value
+
+
 def _clear_metrics_file() -> None:
   _ensure_write_dir()
   for path in (METRICS_PATH, os.path.splitext(METRICS_PATH)[0] + '.ndjson'):
@@ -2628,6 +2687,7 @@ def _run_live_engine(selected_gpu: str, selected_model: str, scheduler_name: str
     from glide.workload import WorkloadGenerator
 
   engine = InferenceEngine(gpu=selected_gpu, model=selected_model, scheduler=scheduler_name)
+  selected_batch = _load_selected_batch()
   engine._skip_sleep = False
   trace = WorkloadGenerator([selected_model], 'poisson', rate=3.0, duration=30.0, seed=int(time.time())).generate()
   start_time = time.time()
@@ -2639,7 +2699,7 @@ def _run_live_engine(selected_gpu: str, selected_model: str, scheduler_name: str
     'gpu': selected_gpu,
     'selected_model': selected_model,
     'selected_gpu': selected_gpu,
-    'batch_size': 32,
+    'batch_size': selected_batch,
     'start_time': start_time,
     'total_expected_batches': expected,
     'batches': [],
@@ -2660,7 +2720,7 @@ def _run_live_engine(selected_gpu: str, selected_model: str, scheduler_name: str
       elapsed = time.time() - start_time
       while trace_index < len(trace) and trace[trace_index]['arrival_time'] <= elapsed:
         item = trace[trace_index]
-        engine.submit_request(model_name=item['model_name'], batch_size=32, priority=item.get('priority', 0))
+        engine.submit_request(model_name=item['model_name'], batch_size=selected_batch, priority=item.get('priority', 0))
         trace_index += 1
 
       if engine.request_queue:
@@ -2689,7 +2749,7 @@ def _live_payload(engine: Any, selected_gpu: str, selected_model: str, scheduler
     'gpu': selected_gpu,
     'selected_model': selected_model,
     'selected_gpu': selected_gpu,
-    'batch_size': 32,
+    'batch_size': _load_selected_batch(),
     'start_time': start_time,
     'total_expected_batches': expected,
     'batches': [
@@ -2806,7 +2866,8 @@ def _safe_metrics_payload() -> Dict[str, Any]:
   selected_model = _load_selected_model()
   selected_gpu = _load_selected_gpu()
   selected_scheduler = _load_selected_scheduler()
-  profile_stats = _get_profile_stats(selected_gpu, selected_model, 32)
+  selected_batch = _load_selected_batch()
+  profile_stats = _get_profile_stats(selected_gpu, selected_model, selected_batch)
   utilization = get_utilization(selected_gpu, selected_model)
   profiles = _scan_gpu_profiles()
   return {
@@ -2820,7 +2881,7 @@ def _safe_metrics_payload() -> Dict[str, Any]:
     'gpu_info': _gpu_info(selected_gpu),
     'available_gpus': sorted(profiles['gpus'].keys()),
     'available_models': profiles['models'],
-    'batch_size': None,
+    'batch_size': selected_batch,
     'start_time': None,
     'total_expected_batches': None,
     'total_batches': 0,
@@ -2934,6 +2995,7 @@ def _calculate_dynamic_utilization(times: List[float], elapsed: float, gpu: str)
 def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
   enriched = _safe_metrics_payload()
   enriched.update(data)
+  selected_batch = _load_selected_batch()
 
   selected_model = _load_selected_model()
   selected_gpu = _load_selected_gpu()
@@ -2946,6 +3008,8 @@ def _enrich_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
 
   enriched['selected_gpu'] = selected_gpu
   enriched['gpu_info'] = _gpu_info(selected_gpu)
+  if enriched.get('status') not in ('starting', 'running', 'stopping'):
+    enriched['batch_size'] = selected_batch
   selected_scheduler = _load_selected_scheduler()
   if enriched.get('status') not in ('starting', 'running', 'stopping'):
     enriched['scheduler_name'] = selected_scheduler
@@ -3412,18 +3476,20 @@ def api_engine_test():
   selected_gpu = _load_selected_gpu()
   selected_model = _load_selected_model()
   scheduler = _load_selected_scheduler()
+  selected_batch = _load_selected_batch()
   previous = InferenceEngine._skip_sleep
   InferenceEngine._skip_sleep = True
   try:
     engine = InferenceEngine(gpu=selected_gpu, model=selected_model, scheduler=scheduler)
     engine._skip_sleep = True
     for _ in range(10):
-      engine.submit_request(batch_size=32)
+      engine.submit_request(batch_size=selected_batch)
     engine.run_queue()
     return jsonify({
       'gpu': selected_gpu,
       'model': selected_model,
       'scheduler_name': scheduler,
+      'batch_size': selected_batch,
       'requests': engine.get_results(),
     })
   finally:
@@ -3569,6 +3635,21 @@ def api_set_scheduler():
   payload = request.get_json(silent=True) or {}
   scheduler = _save_selected_scheduler(payload.get('scheduler'))
   return jsonify({'ok': True, 'scheduler_name': scheduler})
+
+
+@app.route('/api/set_batch', methods=['POST'])
+def api_set_batch():
+  payload = request.get_json(silent=True) or {}
+  batch_size = _save_selected_batch(payload.get('batch_size'))
+  selected_model = _load_selected_model()
+  selected_gpu = _load_selected_gpu()
+  return jsonify({
+    'ok': True,
+    'batch_size': batch_size,
+    'selected_model': selected_model,
+    'selected_gpu': selected_gpu,
+    'profile_stats': _get_profile_stats(selected_gpu, selected_model, batch_size),
+  })
 
 
 @app.route('/api/start_new_run', methods=['POST'])

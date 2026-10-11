@@ -97,8 +97,14 @@ def run_experiment(workload_config: Dict[str, Any], output_dir: str) -> Dict[str
     }
     comparison = compare_schedulers(results)
     os.makedirs(output_dir, exist_ok=True)
+    with open(os.path.join(output_dir, 'config.json'), 'w', encoding='utf-8') as handle:
+        json.dump({**workload_config, 'gpu': gpu, 'request_count': len(workload), 'schedulers': ['fifo', 'sjf', 'hasp']}, handle, indent=2)
+    with open(os.path.join(output_dir, 'trace.json'), 'w', encoding='utf-8') as handle:
+        json.dump(workload, handle, indent=2)
     with open(os.path.join(output_dir, 'results.json'), 'w', encoding='utf-8') as handle:
         json.dump(comparison, handle, indent=2)
+    with open(os.path.join(output_dir, 'requests.json'), 'w', encoding='utf-8') as handle:
+        json.dump({scheduler: [request.to_dict() for request in requests] for scheduler, requests in results.items()}, handle, indent=2)
     export_report(
         build_report(comparison, {
             **workload_config,
@@ -180,6 +186,69 @@ def run_repeated_experiment(
     })
     export_report(report, output_dir)
     return report
+
+
+PUBLICATION_GPUS = (
+    'NVIDIA_A100-SXM4-40GB', 'Tesla_V100-PCIE-32GB', 'Quadro_RTX_6000',
+    'Tesla_M40', 'Tesla_K80', 'Tesla_P100-PCIE-16GB',
+)
+PUBLICATION_MODELS = (
+    'alexnet', 'densenet121', 'densenet201', 'googlenet', 'mnasnet1_0',
+    'mobilenet_v2', 'mobilenet_v3_large', 'resnet18', 'resnet50',
+    'resnet101', 'resnext50_32x4d', 'shufflenet_v2_x1_0', 'squeezenet1_0',
+    'vgg16', 'wide_resnet50_2',
+)
+PUBLICATION_LOADS = (('underloaded', 0.5), ('near_capacity', 2.0), ('overloaded', 8.0))
+PUBLICATION_ARRIVAL_MODES = ('uniform', 'poisson', 'bursty')
+
+
+def run_publication_matrix(
+    output_dir: str = 'publication_matrix', trials: int = 10,
+    seed: int = 42,
+) -> Dict[str, Any]:
+    """Run the broad paired evaluation and save auditable scenario artifacts."""
+    if trials < 1:
+        raise ValueError('trials must be at least 1')
+    scenarios: Dict[str, Any] = {}
+    matrix_config = {
+        'gpu_profiles': list(PUBLICATION_GPUS),
+        'models': list(PUBLICATION_MODELS),
+        'arrival_modes': list(PUBLICATION_ARRIVAL_MODES),
+        'loads': [{'name': name, 'rate': rate} for name, rate in PUBLICATION_LOADS],
+        'batch_sizes': [1, 8, 32],
+        'schedulers': ['fifo', 'sjf', 'hasp'],
+        'trials': trials,
+        'seed_policy': 'base_seed + trial_index',
+        'simulation': 'single-server, non-preemptive, virtual service time',
+    }
+    os.makedirs(output_dir, exist_ok=True)
+    with open(os.path.join(output_dir, 'matrix_config.json'), 'w', encoding='utf-8') as handle:
+        json.dump(matrix_config, handle, indent=2)
+
+    for gpu in PUBLICATION_GPUS:
+        for model in PUBLICATION_MODELS:
+            for arrival_mode in PUBLICATION_ARRIVAL_MODES:
+                for load_name, rate in PUBLICATION_LOADS:
+                    scenario_name = f'{gpu}__{model}__{arrival_mode}__{load_name}'
+                    config = {
+                        'name': scenario_name,
+                        'gpu': gpu,
+                        'models': [model],
+                        'arrival_mode': arrival_mode,
+                        'rate': rate,
+                        'duration': 30.0,
+                        'batch_sizes': [1, 8, 32],
+                        'seed': seed,
+                        'hasp_aging_threshold_s': 5.0,
+                    }
+                    scenario_report = run_repeated_experiment(
+                        config, os.path.join(output_dir, scenario_name), trials=trials,
+                    )
+                    scenarios[scenario_name] = scenario_report.get('results', {})
+
+    aggregate = build_report({'scenarios': scenarios}, matrix_config)
+    export_report(aggregate, output_dir)
+    return aggregate
 
 
 def run_hasp_ablation(workload_config: Dict[str, Any], output_dir: str) -> Dict[str, Any]:

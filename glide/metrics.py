@@ -30,8 +30,25 @@ def compute_metrics(requests: Iterable[Any]) -> Dict[str, float]:
     ends = [float(_value(item, 'end_time')) for item in items if _value(item, 'end_time') is not None]
     total_duration = max(ends) - min(starts) if starts and ends else 0.0
     avg = sum(latencies) / len(latencies) if latencies else 0.0
-    total_latency = sum(latencies)
-    fairness = (total_latency ** 2 / (len(latencies) * sum(v * v for v in latencies))) if latencies and total_latency else 1.0
+    slowdowns = [latency / compute for latency, compute in zip(latencies, computes) if compute > 0.0]
+    total_slowdown = sum(slowdowns)
+    slowdown_fairness = (
+        total_slowdown ** 2 / (len(slowdowns) * sum(value * value for value in slowdowns))
+        if slowdowns and total_slowdown else 1.0
+    )
+    waits = [
+        max(0.0, (float(_value(item, 'start_time')) - float(_value(item, 'arrival_time'))) * 1000.0)
+        for item in items
+        if _value(item, 'start_time') is not None and _value(item, 'arrival_time') is not None
+    ]
+    wait_outliers = sum(
+        1 for item in items
+        if _value(item, 'start_time') is not None
+        and _value(item, 'arrival_time') is not None
+        and float(_value(item, 'emulated_compute_ms', 0.0) or 0.0) > 0.0
+        and float(_value(item, 'start_time')) - float(_value(item, 'arrival_time'))
+        > 3.0 * float(_value(item, 'emulated_compute_ms', 0.0) or 0.0) / 1000.0
+    )
     return {
         'throughput': len(items) / total_duration if total_duration > 0 else 0.0,
         'avg_latency_ms': avg,
@@ -40,8 +57,9 @@ def compute_metrics(requests: Iterable[Any]) -> Dict[str, float]:
         'p99_latency_ms': _percentile(latencies, 0.99),
         'max_latency_ms': max(latencies) if latencies else 0.0,
         'min_latency_ms': min(latencies) if latencies else 0.0,
-        'starvation_count': sum(1 for value in latencies if value > 3.0 * avg) if avg else 0,
-        'jains_fairness_index': fairness,
+        'max_wait_ms': max(waits) if waits else 0.0,
+        'slowdown_fairness_index': slowdown_fairness,
+        'service_relative_wait_outlier_count': wait_outliers,
         'compute_utilisation': (sum(computes) / (total_duration * 1000.0)) if total_duration > 0 else 0.0,
         'memory_peak_mb': max(memories) if memories else 0.0,
     }
@@ -57,10 +75,13 @@ def print_comparison_table(comparison_dict: Dict[str, Dict[str, float]]) -> None
     print('-' * (24 + 10 * len(names)))
     rows = [
         ('Avg Latency(ms)', 'avg_latency_ms', '.2f'),
+        ('P50 Latency(ms)', 'p50_latency_ms', '.2f'),
         ('P95 Latency(ms)', 'p95_latency_ms', '.2f'),
+        ('P99 Latency(ms)', 'p99_latency_ms', '.2f'),
+        ('Max Wait(ms)', 'max_wait_ms', '.2f'),
         ('Throughput(r/s)', 'throughput', '.2f'),
-        ('Fairness Index', 'jains_fairness_index', '.4f'),
-        ('Starvation', 'starvation_count', '.0f'),
+        ('Slowdown Fairness', 'slowdown_fairness_index', '.4f'),
+        ('Wait Outliers', 'service_relative_wait_outlier_count', '.0f'),
     ]
     for label, key, fmt in rows:
         print(f'{label:<22} | ' + ' | '.join(f'{comparison_dict[name].get(key, 0):{fmt}}' for name in names))
