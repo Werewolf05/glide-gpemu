@@ -1323,12 +1323,12 @@ DASHBOARD_HTML = """
    <section class="page" id="page-scheduler">
       <h1 class="page-heading">Scheduler <span>Comparison</span></h1>
       <div class="cards-3">
-        <div class="review-card algo-card"><h3>FIFO — First In First Out</h3><p>Processes requests in arrival order.</p><p><b>Pros:</b> Simple, predictable</p><p><b>Cons:</b> Head-of-line blocking, no starvation prevention</p><span class="badge">BASELINE</span></div>
-        <div class="review-card algo-card sjf"><h3>SJF — Shortest Job First</h3><p>Processes shortest compute time first.</p><p><b>Pros:</b> Better throughput</p><p><b>Cons:</b> Long requests starve indefinitely</p><span class="badge blue">BASELINE</span></div>
-        <div class="review-card algo-card hasp"><h3>HASP — Heterogeneous Affinity Scheduling</h3><p>Scores requests by affinity + aging boost.</p><div class="formula">score = (1/compute_ms) × memory_fit × (1 + age/threshold)</div><p><b>Pros:</b> Starvation-free, fair, competitive throughput</p><span class="badge yellow">NOVEL CONTRIBUTION</span></div>
+        <div class="review-card algo-card"><h3>FIFO — First In First Out</h3><p>Processes requests in arrival order.</p><p><b>Strength:</b> Simple and predictable</p><p><b>Trade-off:</b> Head-of-line blocking for mixed-size jobs</p><span class="badge">BASELINE</span></div>
+        <div class="review-card algo-card sjf"><h3>SJF — Shortest Job First</h3><p>Processes the shortest estimated job first.</p><p><b>Strength:</b> Low average latency</p><p><b>Trade-off:</b> Long requests can experience poor tail latency</p><span class="badge blue">BASELINE</span></div>
+        <div class="review-card algo-card hasp"><h3>HASP — Heterogeneous Affinity Scheduling</h3><p>Combines compute affinity, memory fit, and aging.</p><div class="formula">score = (1/compute_ms) × memory_fit × (1 + age/threshold)</div><p><b>Evaluation goal:</b> Reduce tail latency while limiting the average-latency penalty</p><span class="badge yellow">RESEARCH PROTOTYPE</span></div>
       </div>
       <div class="review-card" style="margin-top:16px"><h3>Comparison metrics</h3><table class="data-table"><thead><tr><th>Metric</th><th>FIFO</th><th>SJF</th><th style="color:var(--orange)">HASP</th></tr></thead><tbody>
-        <tr><td>Avg Latency</td><td>193 ms</td><td>145 ms</td><td style="color:var(--orange)">112 ms</td></tr><tr><td>P95 Latency</td><td>420 ms</td><td>310 ms</td><td style="color:var(--orange)">185 ms</td></tr><tr><td>Throughput</td><td>5.2/s</td><td>7.1/s</td><td style="color:var(--orange)">6.8/s</td></tr><tr><td>Fairness Index</td><td>0.78</td><td>0.65</td><td style="color:var(--orange)">0.94</td></tr><tr><td>Starvation</td><td>12</td><td>28</td><td style="color:var(--green)">0</td></tr>
+        <tr><td>Average latency</td><td colspan="3">Loaded from the paired experiment report</td></tr><tr><td>Tail latency</td><td colspan="3">Compare P95/P99 and maximum wait, not one metric alone</td></tr><tr><td>Fairness</td><td colspan="3">Use slowdown fairness; raw latency equality is reported only as legacy context</td></tr><tr><td>Wait measure</td><td colspan="3">Service-relative wait outliers, not a claim of starvation freedom</td></tr>
       </tbody></table></div>
       <div class="review-card" style="margin-top:16px"><h3>HASP aging boost</h3><svg class="timeline-svg" viewBox="0 0 700 190"><line x1="50" y1="155" x2="660" y2="155" stroke="#737b84"/><text x="50" y="178" fill="#8b949e">0s</text><text x="300" y="178" fill="#8b949e">5s · aging boost</text><text x="620" y="178" fill="#8b949e">10s</text><rect x="70" y="45" width="450" height="22" fill="#5794f2"/><text x="76" y="61" fill="#111217">Request A · waiting</text><rect x="70" y="82" width="150" height="22" fill="#73bf69"/><text x="76" y="98" fill="#111217">Request B</text><rect x="70" y="119" width="260" height="22" fill="#737b84"/><text x="76" y="135" fill="#111217">Request C</text><line x1="350" y1="25" x2="350" y2="160" stroke="#ff9900" stroke-dasharray="5"/><text x="360" y="35" fill="#ff9900">Request A promoted</text></svg><div class="formula">age_boost = waiting_time / 5.0</div></div>
    </section>
@@ -1346,7 +1346,7 @@ DASHBOARD_HTML = """
         <div class="review-card scenario selected"><h3>A · Single model</h3><p>resnet50 · uniform · 2/s · 30s</p></div><div class="review-card scenario"><h3>B · Single model</h3><p>resnet50 · Poisson · 2/s · 30s</p></div><div class="review-card scenario"><h3>C · Multi-model</h3><p>resnet18, resnet50, vgg16 · uniform</p></div><div class="review-card scenario"><h3>D · Bursty</h3><p>resnet18, resnet50, vgg16 · bursty</p></div>
       </div>
       <div class="review-grid" style="margin-top:16px"><div class="review-card"><h3>Scheduler results</h3><div class="bar-list"><div class="bar-row"><span>FIFO avg</span><div class="bar-track"><div class="bar-fill gray" style="width:100%"></div></div><b>193ms</b></div><div class="bar-row"><span>SJF avg</span><div class="bar-track"><div class="bar-fill blue" style="width:75%"></div></div><b>145ms</b></div><div class="bar-row"><span>HASP avg</span><div class="bar-track"><div class="bar-fill" style="width:58%"></div></div><b>112ms</b></div><div class="bar-row"><span>Fairness</span><div class="bar-track"><div class="bar-fill green" style="width:94%"></div></div><b>0.94</b></div></div></div><div class="review-card"><h3>Workload trace</h3><div class="trace" id="workloadTrace"></div><p style="margin-top:12px">Request arrivals over the selected scenario duration</p></div></div>
-      <div class="review-card"><h3>Key findings</h3><div class="cards-3"><p>HASP achieves <b style="color:var(--green)">0 starvation</b> events across all scenarios.</p><p>HASP fairness index <b style="color:var(--orange)">0.94</b> vs FIFO 0.78 and SJF 0.65.</p><p>HASP throughput stays within 5% of SJF while eliminating starvation.</p></div></div>
+      <div class="review-card"><h3>Evaluation goal</h3><div class="cards-3"><p>Compare FIFO, SJF, and HASP on identical request traces.</p><p>Use P95/P99 latency, maximum wait, and slowdown fairness alongside average latency.</p><p>Present HASP as a workload-dependent tail-latency trade-off, not a universal winner.</p></div></div>
    </section>
 
       <div class="status waiting" id="statusBadge"><span class="dot"></span><span id="statusText">WAITING FOR DATA...</span></div>
@@ -1441,11 +1441,11 @@ DASHBOARD_HTML = """
         <div class="stat-value" id="etaTop">--</div>
       </div>
       <div class="stat-chip">
-        <div class="stat-label">Fairness Index <span class="src-badge measured">METRICS</span></div>
+        <div class="stat-label">Slowdown Fairness <span class="src-badge measured">METRICS</span></div>
         <div class="stat-value" id="fairnessTop">--</div>
       </div>
       <div class="stat-chip">
-        <div class="stat-label">Starvation Count <span class="src-badge measured">METRICS</span></div>
+        <div class="stat-label">Wait Outliers <span class="src-badge measured">METRICS</span></div>
         <div class="stat-value" id="starvationTop">--</div>
       </div>
     </div>
@@ -1463,13 +1463,13 @@ DASHBOARD_HTML = """
     </div>
 
     <details class="review-panel">
-      <summary class="panel-title">How HASP prevents starvation</summary>
-      <div class="hasp-copy">HASP prevents requests from waiting forever by giving bonus priority to older requests. The longer you wait, the higher your priority becomes.</div>
+      <summary class="panel-title">How HASP targets the trade-off</summary>
+      <div class="hasp-copy">HASP increases the priority of older requests while retaining compute and memory affinity. The evaluation compares average latency, P95/P99 latency, maximum wait, and slowdown fairness on identical traces.</div>
       <div class="formula">affinity = (1 / compute_ms) × memory_fit_score × (1 + age_boost)</div>
     </details>
 
     <div class="review-panel">
-      <div class="panel-title">Real-time Jain Fairness Index</div>
+      <div class="panel-title">Real-time Slowdown Fairness</div>
       <div class="fairness-meter"><span id="fairnessMeter"></span></div>
     </div>
 
@@ -1846,8 +1846,8 @@ DASHBOARD_HTML = """
       document.getElementById('throughputTop').textContent = Number.isFinite(throughput) ? `${throughput.toFixed(2)} b/s` : '--';
       document.getElementById('etaTop').textContent = formatSeconds(eta);
       document.getElementById('doneTop').textContent = `${done}`;
-      const fairness = Number(summary.jains_fairness_index);
-      const starvation = Number(summary.starvation_count);
+      const fairness = Number(summary.slowdown_fairness_index ?? summary.jains_fairness_index);
+      const starvation = Number(summary.service_relative_wait_outlier_count ?? summary.starvation_count);
       document.getElementById('fairnessTop').textContent = Number.isFinite(fairness) ? fairness.toFixed(3) : '--';
       document.getElementById('starvationTop').textContent = Number.isFinite(starvation) ? `${starvation}` : '--';
       document.getElementById('schedulerActive').textContent = String(metrics.scheduler_name || 'fifo').toUpperCase();
@@ -1867,7 +1867,10 @@ DASHBOARD_HTML = """
         container.innerHTML = values.map((item, index) => {
           const name = ['FIFO', 'SJF', 'HASP'][index];
           const height = ((Number(item.avg_latency_ms) || 0) / maxLatency) * 130;
-          return `<div class="comparison-column"><strong>${name}</strong><div class="comparison-bar" style="height:${height}px"></div><small>Avg ${(Number(item.avg_latency_ms) || 0).toFixed(1)} ms<br>P95 ${(Number(item.p95_latency_ms) || 0).toFixed(1)} ms<br>Fair ${(Number(item.jains_fairness_index) || 0).toFixed(3)}</small></div>`;
+          const fairness = Number(item.slowdown_fairness_index ?? item.jains_fairness_index) || 0;
+          const p99 = Number(item.p99_latency_ms) || 0;
+          const maxWait = Number(item.max_wait_ms) || 0;
+          return `<div class="comparison-column"><strong>${name}</strong><div class="comparison-bar" style="height:${height}px"></div><small>Avg ${(Number(item.avg_latency_ms) || 0).toFixed(1)} ms<br>P95 ${(Number(item.p95_latency_ms) || 0).toFixed(1)} ms<br>P99 ${p99.toFixed(1)} ms<br>Max wait ${maxWait.toFixed(1)} ms<br>Slowdown fair ${fairness.toFixed(3)}</small></div>`;
         }).join('');
         const colors = ['#2563eb', '#10b981', '#f59e0b'];
         const histories = values.map((item) => Array.isArray(item.queue_history) ? item.queue_history : []);
@@ -2441,8 +2444,27 @@ loadExperiments=async function(){
   renderExperimentTraces(data);
   renderExperimentSummary(data);
   renderScenarioCharts(data.results||{});
+  renderResearchValidation(data);
 };
-addAuditStyles();addUnderstanding();loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();
+function renderResearchValidation(data){
+  if(!data.validation)return;
+  const result=Object.values(data.results||{})[0]||{}, schedulers=result.schedulers||{}, names=['fifo','sjf','hasp'], normalized=Boolean(schedulers.hasp?.slowdown_fairness_index!=null);
+  const format=(value,digits=1)=>num(value).toLocaleString(undefined,{minimumFractionDigits:digits,maximumFractionDigits:digits});
+  const target=$('experimentResults');if(!target)return;
+  target.innerHTML=`<div class="review-card" style="margin-bottom:12px"><h3>High-load Poisson · ${data.validation.trials} paired trials</h3><p class="legend-note">Same generated traces for FIFO, SJF, and HASP · profile-driven emulator · interpret as a tail-latency trade-off</p><table class="review-table"><tr><th>Scheduler</th><th>Mean ms</th><th>P95 ms</th><th>P99 ms</th><th>Max wait ms</th><th>${normalized?'Slowdown fairness':'Raw-latency Jain (legacy)'}</th><th>${normalized?'Wait outliers':'Relative outliers (legacy)'}</th></tr>${names.map(name=>{const m=schedulers[name]||{};return `<tr><td>${name.toUpperCase()}</td><td>${format(m.avg_latency_ms)} ± ${format(m.avg_latency_ms_stddev)}</td><td>${format(m.p95_latency_ms)} ± ${format(m.p95_latency_ms_stddev)}</td><td>${m.p99_latency_ms==null?'n/a':format(m.p99_latency_ms)}</td><td>${m.max_wait_ms==null?'n/a':format(m.max_wait_ms)}</td><td>${format(researchValue(m,normalized?'slowdown_fairness_index':'jains_fairness_index'),3)}</td><td>${format(researchValue(m,normalized?'service_relative_wait_outlier_count':'starvation_count'),0)}</td></tr>`}).join('')}</table><p class="legend-note">HASP is evaluated for lower tail latency and maximum wait than SJF, with average latency reported as a trade-off. Legacy reports are labeled explicitly until regenerated with normalized metrics.</p></div>`;
+}
+function researchValue(metrics,key,fallbackKey){return num(metrics?.[key]??metrics?.[fallbackKey])}
+const legacySchedulerTable=loadScheduler;
+loadScheduler=async function(){
+  const data=await (await fetch('/api/scheduler_comparison',{cache:'no-store'})).json();
+  const normalized=Boolean(data.hasp?.slowdown_fairness_index!=null);
+  const rows=[['Avg latency','avg_latency_ms','ms'],['P95 latency','p95_latency_ms','ms'],['P99 latency','p99_latency_ms','ms'],['Maximum wait','max_wait_ms','ms'],['Throughput','throughput','/s'],[normalized?'Slowdown fairness':'Raw-latency Jain (legacy)',normalized?'slowdown_fairness_index':'jains_fairness_index',''],[normalized?'Wait outliers':'Relative outliers (legacy)',normalized?'service_relative_wait_outlier_count':'starvation_count','']];
+  if($('schedulerLoading'))$('schedulerLoading').style.display='none';
+  if($('schedulerRows'))$('schedulerRows').innerHTML=rows.map(row=>`<tr><td>${row[0]}</td>${['fifo','sjf','hasp'].map(name=>`<td>${researchValue(data[name],row[1],row[1]==='slowdown_fairness_index'?'jains_fairness_index':row[1]==='service_relative_wait_outlier_count'?'starvation_count':undefined).toFixed(row[1]==='slowdown_fairness_index'?3:2)}${row[2]}</td>`).join('')}</tr>`).join('');
+  const target=$('haspDecision');if(target)target.textContent='HASP combines profiled compute affinity, memory fit, and aging. Evaluate it using tail latency and maximum wait, with average latency reported as a trade-off.';
+};
+function updateResearchCopy(){document.querySelectorAll('#page-scheduler p,#page-experiments p').forEach(node=>{node.textContent=node.textContent.replace('Starvation-free, fair, competitive throughput','Tail-latency and wait-time trade-off under evaluation').replace('0 starvation events across all scenarios.','Evaluate P95/P99 latency and maximum wait on identical traces.').replace('HASP fairness index','HASP slowdown fairness').replace('while eliminating starvation.','while reporting wait outliers separately from starvation claims.')})}
+addAuditStyles();addUnderstanding();updateResearchCopy();loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();
 </script></body></html>
 """
 
@@ -3085,6 +3107,42 @@ def _jains_index(values: List[float]) -> float:
   return (total * total / denominator) if denominator else 1.0
 
 
+def _research_metrics(requests: List[Any]) -> Dict[str, float]:
+  latencies = [float(request.latency_ms or 0.0) for request in requests]
+  slowdowns = [
+    latency / float(request.emulated_compute_ms)
+    for request, latency in zip(requests, latencies)
+    if request.emulated_compute_ms and request.emulated_compute_ms > 0
+  ]
+  slowdown_total = sum(slowdowns)
+  slowdown_fairness = (
+    slowdown_total ** 2 / (len(slowdowns) * sum(value * value for value in slowdowns))
+    if slowdowns and slowdown_total else 1.0
+  )
+  waits = [
+    max(0.0, (float(request.start_time) - float(request.arrival_time)) * 1000.0)
+    for request in requests
+    if request.start_time is not None
+  ]
+  outliers = sum(
+    1 for request in requests
+    if request.start_time is not None
+    and request.emulated_compute_ms and request.emulated_compute_ms > 0
+    and (float(request.start_time) - float(request.arrival_time))
+    > 3.0 * float(request.emulated_compute_ms) / 1000.0
+  )
+  return {
+    'avg_latency_ms': statistics.mean(latencies) if latencies else 0.0,
+    'p50_latency_ms': _percentile(latencies, 0.50),
+    'p95_latency_ms': _percentile(latencies, 0.95),
+    'p99_latency_ms': _percentile(latencies, 0.99),
+    'max_latency_ms': max(latencies) if latencies else 0.0,
+    'max_wait_ms': max(waits) if waits else 0.0,
+    'slowdown_fairness_index': slowdown_fairness,
+    'service_relative_wait_outlier_count': outliers,
+  }
+
+
 def _run_scheduler_comparison() -> Dict[str, Dict[str, Any]]:
   try:
     from .engine import InferenceEngine
@@ -3107,21 +3165,23 @@ def _run_scheduler_comparison() -> Dict[str, Dict[str, Any]]:
       # Keep the profiled compute delay during experiments so scheduler order
       # affects measured completion and tail latency, rather than collapsing
       # every request to the same wall-clock instant.
-      engine._skip_sleep = False
+      engine._skip_sleep = True
       for model, batch_size in request_specs:
         engine.submit_request(model_name=model, batch_size=batch_size)
       arrival_time = time.time()
       for request in engine.request_queue:
         request.arrival_time = arrival_time
+      engine.enable_virtual_time(arrival_time)
       engine.run_queue()
-      elapsed = max(time.perf_counter() - started, 1e-9)
-      latencies = [float(request.latency_ms or 0.0) for request in engine.completed_requests]
+      elapsed = max(
+        max(float(request.end_time) for request in engine.completed_requests if request.end_time is not None)
+        - arrival_time,
+        1e-9,
+      )
+      metrics = _research_metrics(engine.completed_requests)
       results[scheduler_name] = {
-        'avg_latency_ms': statistics.mean(latencies) if latencies else 0.0,
-        'p95_latency_ms': _percentile(latencies, 0.95),
-        'throughput': len(latencies) / elapsed,
-        'jains_fairness_index': _jains_index(latencies),
-        'starvation_count': sum(1 for value in latencies if value > (statistics.mean(latencies) * 3)) if latencies else 0,
+        **metrics,
+        'throughput': len(engine.completed_requests) / elapsed,
         'requests': [request.to_dict() for request in engine.completed_requests],
         'decision_trace': engine.scheduler.get_stats().get('decision_trace', []),
         'completion_times_s': [
@@ -3162,21 +3222,20 @@ def _run_real_experiments(progress_callback: Any = None) -> Dict[str, Any]:
         progress_callback(combination, 12, name, scheduler_name)
       engine = InferenceEngine(gpu='Tesla_V100-PCIE-32GB', model=experiment_models[0], scheduler=scheduler_name)
       # Preserve profiled service times so scheduler ordering changes latency.
-      engine._skip_sleep = False
+      engine._skip_sleep = True
       base_time = time.time()
       for item in trace:
         request_id = engine.submit_request(model_name=item['model_name'], batch_size=item['batch_size'], priority=item['priority'])
         request = next(request for request in engine.request_queue if request.request_id == request_id)
         request.arrival_time = base_time - max(0.0, 15.0 - float(item['arrival_time']))
+      engine.enable_virtual_time(base_time - 15.0)
       started = time.perf_counter()
       engine.run_queue()
       elapsed = max(time.perf_counter() - started, 1e-9)
-      latencies = [float(request.latency_ms or 0.0) for request in engine.completed_requests]
-      average = statistics.mean(latencies) if latencies else 0.0
+      metrics = _research_metrics(engine.completed_requests)
       output[name]['schedulers'][scheduler_name] = {
-        'avg_latency_ms': average, 'p95_latency_ms': _percentile(latencies, .95),
-        'throughput': len(latencies) / elapsed, 'jains_fairness_index': _jains_index(latencies),
-        'starvation_count': sum(1 for value in latencies if value > average * 3) if latencies else 0,
+        **metrics,
+        'throughput': len(engine.completed_requests) / elapsed,
       }
   return output
 
