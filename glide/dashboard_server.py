@@ -10,7 +10,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template_string, request, send_file
 
 
 GLIDE_DIR = os.environ.get('GLIDE_DIR', os.path.dirname(os.path.abspath(__file__)))
@@ -2272,7 +2272,7 @@ canvas{max-height:220px}.resource{display:grid;gap:12px}.resource-row{display:gr
 <section id="page-engine" class="page"><h1 class="page-heading">Inference Engine</h1><div class="review-cards four"><div class="review-card"><b id="engineCount">--</b><p>Combinations available</p></div><div class="review-card"><b style="color:var(--green)">Profiled</b><p>Real profile source</p></div><div class="review-card"><b id="engineBest">--</b><p>Fastest GPU</p></div><div class="review-card"><b id="engineWorst">--</b><p>Slowest GPU</p></div></div><div class="review-card"><h3>GPU comparison</h3><table class="review-table"><thead><tr><th>GPU</th><th>Compute ms</th><th>Memory MB</th><th>Tier</th></tr></thead><tbody id="gpuComparisonRows"></tbody></table></div><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Model timings</h3><div id="modelTimingBars"></div></div><div class="review-card"><h3>Live engine test</h3><div id="engineTerminal" class="terminal">Run a real scheduler test to load requests.</div><button id="runEngineTest" class="action" style="margin-top:10px">Run new test</button></div></div></section>
 <section id="page-scheduler" class="page"><h1 class="page-heading">Scheduler</h1><div class="review-cards"><div class="review-card"><h3>FIFO</h3><p>Requests execute in arrival order.</p><span class="badge">BASELINE</span></div><div class="review-card"><h3>SJF</h3><p>Shortest profiled compute time first.</p><span class="badge blue">BASELINE</span></div><div class="review-card"><h3>HASP</h3><p>Affinity scheduling with aging boost.</p><div class="formula">score = (1/compute_ms) × memory_fit × (1 + age/threshold)</div><span class="badge yellow">NOVEL CONTRIBUTION</span></div></div><div class="review-card"><h3>Real scheduler comparison</h3><div id="schedulerLoading" class="muted">Computing results from real profiled data...</div><table class="review-table"><thead><tr><th>Metric</th><th>FIFO</th><th>SJF</th><th>HASP</th></tr></thead><tbody id="schedulerRows"></tbody></table></div><div class="review-grid" style="margin-top:12px"><div class="review-card"><h3>Latency and fairness</h3><canvas id="schedulerChart" height="150"></canvas></div><div class="review-card"><h3>HASP decision explanation</h3><div id="haspDecision" class="muted">Waiting for scheduler data...</div></div></div></section>
 <section id="page-profiler" class="page"><h1 class="page-heading">Profiler</h1><label class="muted">Model <select id="profileModel"><option>resnet18</option><option>resnet50</option><option>alexnet</option><option>vgg16</option></select></label><div class="review-card" style="margin-top:12px"><h3>Real layer timing results</h3><div id="profilerLoading" class="muted">Loading SQLite profiles...</div><table class="review-table"><thead><tr><th>Layer</th><th>Compute ms</th><th>Memory MB</th><th>% total</th></tr></thead><tbody id="profilerRows"></tbody></table></div><div class="review-cards" style="margin-top:12px"><div class="review-card insight"><h3>Bottleneck</h3><p id="bottleneck">--</p></div><div class="review-card insight"><h3>Fastest</h3><p id="fastest">--</p></div><div class="review-card insight"><h3>Memory peak</h3><p id="memoryPeak">--</p></div></div></section>
-<section id="page-experiments" class="page"><h1 class="page-heading">Experiment Results</h1><div id="experimentLoading" class="muted">No experiment data yet.</div><button id="runExperiments" class="action" style="margin:10px 0">Run all experiments (~60 seconds)</button><div id="experimentProgress" class="muted"></div><div class="review-grid"><div class="review-card"><h3>Scenario comparison</h3><canvas id="scenarioChart" height="180"></canvas></div><div class="review-card"><h3>What to look for</h3><p class="muted">Lower latency and starvation are better. Higher fairness and throughput are better. Error bars appear when repeated reports contain confidence intervals.</p></div></div><div id="experimentResults"></div></section>
+<section id="page-experiments" class="page"><h1 class="page-heading">Experiment Results</h1><div id="experimentLoading" class="muted">No experiment data yet.</div><button id="runExperiments" class="action" style="margin:10px 0">Run 12 interactive scenarios</button><p class="legend-note">This starts the dashboard’s interactive experiment suite. It is separate from the saved publication matrices shown below.</p><div id="experimentProgress" class="muted"></div><div class="review-grid"><div class="review-card"><h3>Scenario comparison</h3><canvas id="scenarioChart" height="180"></canvas></div><div class="review-card"><h3>What to look for</h3><p class="muted">Compare mean and tail latency, slowdown fairness, throughput, and service-relative wait outliers. An outlier is not necessarily indefinite starvation.</p></div></div><div id="experimentResults"></div></section>
 </main>
 <script>
 const $=id=>document.getElementById(id), colors={orange:'#ff9900',blue:'#5794f2',green:'#73bf69',red:'#f2495c',yellow:'#fade2a',gray:'#737b84',grid:'#2c3235'};
@@ -2288,7 +2288,7 @@ document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('clic
  document.querySelectorAll('.nav-item').forEach(nav=>nav.classList.toggle('active',nav===item));
  document.querySelectorAll('.page').forEach(section=>section.classList.toggle('active',section.id===`page-${page}`));
  if(page==='engine') replayEngine();
- if(page==='experiments') drawTrace();
+ if(page==='experiments'){drawTrace();loadPublicationMatrixResults()}
 }));
 function replayEngine(){
  const terminal=$('engineTerminal'); if(!terminal)return;
@@ -2354,10 +2354,12 @@ function addAuditStyles(){
     .race-col{display:flex;flex:1 1 0;min-width:0;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;text-align:center;color:#fff}
     .race-bar{width:min(44px,70%);max-height:100px;min-height:8px;flex:0 0 auto;background:var(--orange);transition:height .35s}
     .race-col b{font-size:11px;line-height:1.2}.race-col small{color:var(--muted);font-size:10px;line-height:1.25}
+    .matrix-downloads{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.matrix-download{display:inline-block;padding:6px 9px;border:1px solid var(--border);color:var(--blue);text-decoration:none}.matrix-download:hover{border-color:var(--blue);color:#fff}
     .layer-stack{display:grid;gap:5px;margin-top:12px}.layer-box{min-height:18px;padding:5px 9px;border-left:4px solid var(--orange);background:#202328;overflow:hidden;transition:height .3s}.layer-box span{font-weight:700}.layer-box small{display:block;color:var(--muted)}
     .traffic-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.traffic-card{padding:10px;background:#111217;border:1px solid var(--border)}.traffic-dots{font-size:18px;letter-spacing:4px;color:var(--orange);min-height:26px}.traffic-dots.uniform{animation:dotPulse 1.2s infinite}.traffic-dots.poisson{animation:dotPulse 1.8s infinite}.traffic-dots.bursty{animation:dotPulse .8s infinite}@keyframes dotPulse{50%{opacity:.45}}
     .legend-note{margin-top:8px;color:var(--muted);font-size:11px}.model-timing-list{max-height:520px;overflow:auto;padding-right:6px}.info-tip{display:inline-grid;place-items:center;width:16px;height:16px;margin-left:4px;border:1px solid var(--muted);border-radius:50%;color:var(--muted);font-size:10px;cursor:help}
     @media(max-width:700px){.concept-flow,.traffic-grid{grid-template-columns:1fr 1fr}.scheduler-sim{grid-template-columns:1fr}}
+    @media(max-width:700px){.sidebar{position:sticky;top:0;bottom:auto;left:auto;width:100%;height:auto;display:flex;align-items:center;gap:4px;padding:8px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--border)}.sidebar .brand{flex:0 0 auto;padding:0 8px 0;font-size:15px}.sidebar .brand small{display:none!important}.nav-item{flex:0 0 auto;width:auto;margin:0;padding:8px 6px;white-space:nowrap;border-left:0;border-bottom:2px solid transparent}.nav-item.active{border-left-color:transparent;border-bottom-color:var(--orange)}.nav-icon{width:18px}.sidebar-foot{display:none}.dashboard{width:100%;max-width:none;margin-left:0;padding:8px}.review-grid{grid-template-columns:1fr}.review-cards.four{grid-template-columns:repeat(2,minmax(0,1fr))}.review-table{display:block;width:100%;max-width:100%;overflow-x:auto;white-space:nowrap}}
   `;
   document.head.appendChild(style);
 }
@@ -2518,11 +2520,98 @@ function showPublicationMatrixPlan(){
   const card=document.createElement('div');
   card.id='publicationMatrixPlan';
   card.className='review-card';
-  card.innerHTML='<h3>Publication evaluation matrix</h3><p>Offline paired evaluation: 6 GPU profiles × 15 models × 3 batch sizes × 3 arrival patterns × 3 load levels, with FIFO, SJF, and HASP on the same traces. The dashboard runs one selected combination at a time; the matrix saves per-trial traces and reports to avoid overloading the live engine.</p>';
+  card.innerHTML='<h3>Research experiment results</h3><p>Completed offline studies compare FIFO, SJF, and HASP on shared profiled traces. The original fixed-rate, single-model sweep is shown separately from the capacity-normalized mixed-model study. All times are emulator-derived, not physical-GPU measurements.</p>';
   page.insertBefore(card,page.firstElementChild?.nextElementSibling||page.firstChild);
+  const results=document.createElement('div');
+  results.id='publicationMatrixResults';
+  results.innerHTML='<p class="muted">Loading saved publication matrix reports...</p>';
+  page.insertBefore(results,card.nextSibling);
+}
+function matrixNode(tag,text,className){const node=document.createElement(tag);if(text!=null)node.textContent=String(text);if(className)node.className=className;return node}
+function matrixTable(headers,rows){
+ const wrap=matrixNode('div',null,'matrix-table-wrap');wrap.style.overflowX='auto';
+ const table=matrixNode('table',null,'review-table'),head=document.createElement('thead'),headerRow=document.createElement('tr');
+ headers.forEach(label=>headerRow.appendChild(matrixNode('th',label)));
+ head.appendChild(headerRow);table.appendChild(head);const body=document.createElement('tbody');
+ rows.forEach(values=>{const row=document.createElement('tr');values.forEach(value=>row.appendChild(matrixNode('td',value)));body.appendChild(row)});
+ table.appendChild(body);wrap.appendChild(table);return wrap;
+}
+function matrixNumber(value,digits=2){return Number.isFinite(Number(value))?Number(value).toLocaleString(undefined,{minimumFractionDigits:digits,maximumFractionDigits:digits}):'n/a'}
+function matrixOverallCard(experiment){
+ const card=matrixNode('article',null,'review-card');
+ const mixed=experiment.kind==='capacity_normalized_mixed';
+ card.appendChild(matrixNode('h3',mixed?'Capacity-normalized mixed-model matrix':'Original fixed-rate single-model matrix'));
+ const trialCount=Number(experiment.paired_trial_count)||0, evalCount=Number(experiment.scheduler_evaluations)||0;
+ card.appendChild(matrixNode('p',`${experiment.scenario_count} scenarios · ${trialCount.toLocaleString()} paired trials · ${evalCount.toLocaleString()} scheduler evaluations`,'legend-note'));
+ const schedulers=experiment.schedulers||{}, names=['fifo','sjf','hasp'];
+ const metrics=[['Mean ms','avg_latency_ms',2],['P95 ms','p95_latency_ms',2],['P99 ms','p99_latency_ms',2],['Max ms','max_latency_ms',2],['Throughput /s','throughput',2],['Slowdown fairness','slowdown_fairness_index',4],['Wait outliers / scenario','service_relative_wait_outlier_count',2]];
+ const rows=names.map(name=>[name.toUpperCase(),...metrics.map(([,key,digits])=>matrixNumber(schedulers[name]?.[key],digits))]);
+ card.appendChild(matrixTable(['Scheduler',...metrics.map(item=>item[0])],rows));
+ const downloadRow=matrixNode('div',null,'matrix-downloads');
+ const downloadKind=mixed?'mixed':'fixed';
+ [['json','Full JSON'],['csv','Summary CSV'],['html','HTML report']].forEach(([format,label])=>{
+  const link=matrixNode('a',label,'matrix-download');
+  link.href=`/api/publication_matrix_report/${downloadKind}/${format}`;
+  link.setAttribute('download','');downloadRow.appendChild(link);
+ });
+ card.appendChild(downloadRow);
+ if(experiment.hasp_vs_sjf){
+  const comparisons=experiment.hasp_vs_sjf;
+  const comparisonRows=[
+   ['Mean latency','avg_latency_ms'],['P95 latency','p95_latency_ms'],
+   ['P99 latency','p99_latency_ms'],['Slowdown fairness','slowdown_fairness_index'],
+   ['Service-relative outliers','service_relative_wait_outlier_count'],
+  ].map(([label,key])=>{const value=comparisons[key]||{};return [label,value.hasp_better||0,value.tie||0,value.hasp_worse||0]});
+  const comparisonCard=matrixNode('div',null,'review-card');
+  comparisonCard.appendChild(matrixNode('h4','HASP versus SJF across scenario means'));
+  comparisonCard.appendChild(matrixTable(['Metric','HASP better','Tie','HASP worse'],comparisonRows));
+  card.appendChild(comparisonCard);
+ }
+ if(mixed){
+  const sjf=schedulers.sjf||{},hasp=schedulers.hasp||{};
+  const pct=(key)=>{const base=Number(sjf[key]),value=Number(hasp[key]);return base?((value-base)/base*100):0};
+  const meanChange=pct('avg_latency_ms'),p99Change=pct('p99_latency_ms'),fairnessChange=(Number(hasp.slowdown_fairness_index)||0)-(Number(sjf.slowdown_fairness_index)||0),outlierChange=pct('service_relative_wait_outlier_count');
+  const note=`Against SJF, HASP mean latency is ${Math.abs(meanChange).toFixed(2)}% ${meanChange>=0?'higher':'lower'}, P99 is ${Math.abs(p99Change).toFixed(2)}% ${p99Change<=0?'lower':'higher'}, slowdown fairness changes by ${fairnessChange>=0?'+':''}${fairnessChange.toFixed(4)}, and service-relative outliers are ${Math.abs(outlierChange).toFixed(2)}% ${outlierChange>=0?'higher':'lower'}. These are scenario-macro averages, not physical-GPU measurements.`;
+  card.appendChild(matrixNode('p',note,'legend-note'));
+ }
+ return card;
+}
+function matrixBreakdown(experiment,dimension,title){
+ const groups=experiment.groups?.[dimension]||[];if(!groups.length)return null;
+ const details=document.createElement('details');details.className='review-card';
+ details.appendChild(matrixNode('summary',title));
+ const schedulers=['sjf','hasp'];
+ const rows=groups.map(group=>{
+  const values=[group.name,group.scenario_count];
+  schedulers.forEach(name=>{const metrics=group.schedulers?.[name]||{};values.push(matrixNumber(metrics.avg_latency_ms),matrixNumber(metrics.p99_latency_ms),matrixNumber(metrics.slowdown_fairness_index,4),matrixNumber(metrics.service_relative_wait_outlier_count))});
+  return values;
+ });
+ details.appendChild(matrixTable(['Group','Scenarios','SJF mean ms','SJF P99 ms','SJF fairness','SJF outliers','HASP mean ms','HASP P99 ms','HASP fairness','HASP outliers'],rows));
+ return details;
+}
+async function loadPublicationMatrixResults(){
+ const host=$('publicationMatrixResults');if(!host)return;
+ try{
+  const response=await fetch('/api/publication_matrix_results',{cache:'no-store'});
+  const payload=await response.json();host.innerHTML='';
+  host.appendChild(matrixNode('p',payload.measurement_note||'Profile-derived emulator results.','legend-note'));
+  const experiments=(payload.experiments||[]).filter(item=>item.available);
+  if(!experiments.length){host.appendChild(matrixNode('p','No saved publication matrix reports are available.'));return}
+  experiments.forEach(experiment=>{
+   host.appendChild(matrixOverallCard(experiment));
+   if(experiment.kind==='capacity_normalized_mixed'){
+    const targets=experiment.configuration?.target_utilizations||[];
+    const targetText=targets.map(item=>`${item.name}: ${matrixNumber(item.value,2)} target utilization`).join(' · ');
+    host.appendChild(matrixNode('p',`Load calibration: ${targetText}. Arrival rates use target utilization divided by mean profiled service time.`, 'legend-note'));
+    [['load_level','By target utilization'],['model_mix','By workload mix'],['gpu_profile','By GPU profile']].forEach(([dimension,title])=>{const table=matrixBreakdown(experiment,dimension,title);if(table)host.appendChild(table)});
+   }else{
+    host.appendChild(matrixNode('p','This earlier sweep used fixed request rates (0.5, 2, and 8 requests/s) across different service profiles, so its load labels are not utilization-normalized. Use the mixed-model study above for capacity-normalized comparisons.','legend-note'));
+   }
+  });
+ }catch(_error){host.innerHTML='';host.appendChild(matrixNode('p','Unable to load saved publication matrix reports.','muted'))}
 }
 showPublicationMatrixPlan();
-addAuditStyles();addUnderstanding();updateResearchCopy();loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();
+addAuditStyles();addUnderstanding();updateResearchCopy();loadGpuComparison();loadScheduler();loadProfiler('resnet18');loadExperiments();loadPublicationMatrixResults();
 </script></body></html>
 """
 
@@ -3457,6 +3546,144 @@ def _scheduler_validation_payload(report: Dict[str, Any]) -> Dict[str, Any]:
   return payload
 
 
+PUBLICATION_MATRIX_METRICS = (
+  'avg_latency_ms', 'p95_latency_ms', 'p99_latency_ms', 'max_latency_ms',
+  'throughput', 'slowdown_fairness_index', 'service_relative_wait_outlier_count',
+)
+_PUBLICATION_MATRIX_CACHE: Dict[str, Any] = {}
+_PUBLICATION_MATRIX_CACHE_LOCK = threading.Lock()
+
+
+def _matrix_scenario_dimensions(
+  scenario_name: str, matrix_kind: str, matrix_config: Dict[str, Any],
+) -> Dict[str, str]:
+  gpu = next((
+    name for name in matrix_config.get('gpu_profiles', [])
+    if scenario_name.startswith(f'{name}__')
+  ), None)
+  if gpu is None:
+    return {}
+  parts = scenario_name[len(gpu) + 2:].split('__')
+  if len(parts) != 3:
+    return {}
+  if matrix_kind == 'capacity_normalized_mixed':
+    return {
+      'gpu_profile': gpu,
+      'model_mix': parts[0],
+      'arrival_pattern': parts[1],
+      'load_level': parts[2],
+    }
+  return {
+    'gpu_profile': gpu,
+    'model': parts[0],
+    'arrival_pattern': parts[1],
+    'load_level': parts[2],
+  }
+
+
+def _macro_matrix_metrics(scenarios: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
+  result: Dict[str, Dict[str, float]] = {}
+  for scheduler_name in SCHEDULER_NAMES:
+    result[scheduler_name] = {}
+    for metric_name in PUBLICATION_MATRIX_METRICS:
+      values = [
+        scenario.get('summary', {}).get(scheduler_name, {}).get(metric_name, {}).get('mean')
+        for scenario in scenarios
+      ]
+      values = [float(value) for value in values if isinstance(value, (int, float))]
+      if values:
+        result[scheduler_name][metric_name] = statistics.mean(values)
+  return result
+
+
+def _group_matrix_scenarios(
+  scenarios: Dict[str, Dict[str, Any]], matrix_kind: str,
+  matrix_config: Dict[str, Any], dimension: str,
+) -> List[Dict[str, Any]]:
+  groups: Dict[str, List[Dict[str, Any]]] = {}
+  for scenario_name, scenario in scenarios.items():
+    dimensions = _matrix_scenario_dimensions(scenario_name, matrix_kind, matrix_config)
+    group_name = dimensions.get(dimension)
+    if group_name is not None:
+      groups.setdefault(group_name, []).append(scenario)
+  return [
+    {
+      'name': group_name,
+      'scenario_count': len(group_scenarios),
+      'schedulers': _macro_matrix_metrics(group_scenarios),
+    }
+    for group_name, group_scenarios in sorted(groups.items())
+  ]
+
+
+def _hasp_matrix_comparisons(scenarios: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
+  comparisons: Dict[str, Dict[str, int]] = {}
+  higher_is_better = {'slowdown_fairness_index'}
+  for metric_name in PUBLICATION_MATRIX_METRICS:
+    counts = {'hasp_better': 0, 'tie': 0, 'hasp_worse': 0}
+    for scenario in scenarios.values():
+      summary = scenario.get('summary', {})
+      sjf = summary.get('sjf', {}).get(metric_name, {}).get('mean')
+      hasp = summary.get('hasp', {}).get(metric_name, {}).get('mean')
+      if not isinstance(sjf, (int, float)) or not isinstance(hasp, (int, float)):
+        continue
+      difference = float(hasp) - float(sjf)
+      if abs(difference) <= 1e-12:
+        counts['tie'] += 1
+      elif (difference > 0) == (metric_name in higher_is_better):
+        counts['hasp_better'] += 1
+      else:
+        counts['hasp_worse'] += 1
+    comparisons[metric_name] = counts
+  return comparisons
+
+
+def _build_publication_matrix_payload(matrix_kind: str, report: Dict[str, Any]) -> Dict[str, Any]:
+  matrix_config = report.get('config', {})
+  scenarios = report.get('results', {}).get('scenarios', {})
+  if not isinstance(scenarios, dict):
+    scenarios = {}
+  dimension_names = ['gpu_profile', 'arrival_pattern', 'load_level']
+  if matrix_kind == 'capacity_normalized_mixed':
+    dimension_names.append('model_mix')
+  groups = {
+    dimension: _group_matrix_scenarios(scenarios, matrix_kind, matrix_config, dimension)
+    for dimension in dimension_names
+  }
+  return {
+    'available': bool(scenarios),
+    'kind': matrix_kind,
+    'generated_at': report.get('generated_at'),
+    'scenario_count': len(scenarios),
+    'trials_per_scenario': matrix_config.get('trials', 0),
+    'paired_trial_count': len(scenarios) * int(matrix_config.get('trials', 0)),
+    'scheduler_evaluations': len(scenarios) * int(matrix_config.get('trials', 0)) * len(SCHEDULER_NAMES),
+    'configuration': matrix_config,
+    'schedulers': _macro_matrix_metrics(list(scenarios.values())),
+    'hasp_vs_sjf': _hasp_matrix_comparisons(scenarios),
+    'groups': groups,
+  }
+
+
+def _load_publication_matrix_payload(matrix_kind: str, report_path: str) -> Dict[str, Any]:
+  try:
+    modified_time = os.path.getmtime(report_path)
+  except OSError:
+    return {'available': False, 'kind': matrix_kind}
+  with _PUBLICATION_MATRIX_CACHE_LOCK:
+    cached = _PUBLICATION_MATRIX_CACHE.get(matrix_kind)
+    if cached is not None and cached[0] == modified_time:
+      return cached[1]
+    try:
+      with open(report_path, 'r', encoding='utf-8') as report_file:
+        report = json.load(report_file)
+    except (OSError, json.JSONDecodeError):
+      return {'available': False, 'kind': matrix_kind}
+    payload = _build_publication_matrix_payload(matrix_kind, report)
+    _PUBLICATION_MATRIX_CACHE[matrix_kind] = (modified_time, payload)
+    return payload
+
+
 @app.route('/api/scheduler_comparison')
 def api_scheduler_comparison():
   report = _load_scheduler_validation_report()
@@ -3543,6 +3770,43 @@ def api_experiment_results_real():
   if state.get('status') in ('computing', 'failed', 'complete'):
     return jsonify(state)
   return jsonify({'status': 'idle', 'progress': '0/12 combinations done', 'results': {}})
+
+
+@app.route('/api/publication_matrix_results')
+def api_publication_matrix_results():
+  return jsonify({
+    'experiments': [
+      _load_publication_matrix_payload(
+        'fixed_rate_single_model',
+        os.path.join(PROJECT_ROOT, 'publication_matrix', 'report.json'),
+      ),
+      _load_publication_matrix_payload(
+        'capacity_normalized_mixed',
+        os.path.join(PROJECT_ROOT, 'publication_matrix_mixed', 'report.json'),
+      ),
+    ],
+    'measurement_note': 'Profile-derived service times in a single-server virtual simulator; not physical-GPU measurements.',
+  })
+
+
+@app.route('/api/publication_matrix_report/<matrix_kind>/<report_format>')
+def api_publication_matrix_report(matrix_kind: str, report_format: str):
+  matrix_directories = {
+    'fixed': 'publication_matrix',
+    'mixed': 'publication_matrix_mixed',
+  }
+  report_types = {
+    'json': ('report.json', 'application/json'),
+    'csv': ('report.csv', 'text/csv'),
+    'html': ('report.html', 'text/html'),
+  }
+  if matrix_kind not in matrix_directories or report_format not in report_types:
+    return jsonify({'error': 'Unknown publication report'}), 404
+  filename, mimetype = report_types[report_format]
+  report_path = os.path.join(PROJECT_ROOT, matrix_directories[matrix_kind], filename)
+  if not os.path.isfile(report_path):
+    return jsonify({'error': 'Publication report is unavailable'}), 404
+  return send_file(report_path, mimetype=mimetype, as_attachment=True, download_name=filename)
 
 
 @app.route('/api/run_experiments', methods=['POST'])
